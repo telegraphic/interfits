@@ -1,8 +1,8 @@
 #! /usr/bin/env python
 # encoding: utf-8
 """
-uvfits_reader.py
-================
+interfits.py
+============
 
 reads a uvfits file and loads it into InterFits class
 
@@ -27,7 +27,7 @@ class VerificationError(Exception):
     pass
     
 
-class UvFits(object):
+class InterFits(object):
     def __init__(self, filename=None):
         self.filename = filename
         
@@ -44,6 +44,20 @@ class UvFits(object):
         self.d_uv_data = {}
         self.d_frequency = {}
 
+        self.stokes_codes = {
+            1  : 'Stokes I',
+            2  : 'Stokes Q',
+            3  : 'Stokes U',
+            4  : 'Stokes V',
+            -1 : 'RR',
+            -2 : 'LL',
+            -3 : 'RL',
+            -4 : 'LR',
+            -5 : 'XX',
+            -6 : 'YY',
+            -7 : 'XY',
+            -8 : 'YX'
+        }
         
         # Check what kind of file to load
         if filename:
@@ -189,10 +203,22 @@ class UvFits(object):
         
         s = self.uvdata['DATA'].shape
         
+        # Find stokes axis type and values
+        for ct in ctypes:
+            if self.uvhead[ct].strip() == 'STOKES':
+                stokes_axid = int(ct.lstrip('CTYPE'))
+                break
+        
+        stokes_axis_len = int(self.uvhead['NAXIS%i'%stokes_axid])
+        stokes_code     = int(self.uvhead['CRVAL%i'%stokes_axid])
+        stokes_delt     = int(self.uvhead['CDELT%i'%stokes_axid])
+        stokes_vals  = range(stokes_code, stokes_code + stokes_delt* stokes_axis_len, stokes_delt)
+        self.stokes_axis = [self.stokes_codes[i] for i in stokes_vals]
+        
         # Should have 7 axes, likely
         if len(s) != 7:
             if len(s) == 6:
-                print "Reshaping uv-data..."
+                #print "Reshaping uv-data..."
                 new_shape = (s[0], s[1], s[2], 1, s[3], s[4],s[5])
                 self.d_uv_data['DATA'] = self.uvdata['DATA'].reshape(new_shape)
             else:
@@ -202,6 +228,7 @@ class UvFits(object):
         else:
             self.d_uv_data['DATA'] = self.uvdata['DATA']
         #print c
+    
     
     def readFitsidi(self):
         """ TODO """
@@ -228,6 +255,15 @@ class UvFits(object):
         
         h1('\nCreating ARRAY_GEOMETRY')
         tbl_array_geometry = make_array_geometry(config=config_xml, num_rows=32)
+        print tbl_array_geometry.header
+
+        h1('\nCreating ANTENNA')
+        tbl_antenna = make_array_geometry(config=config_xml, num_rows=32)
+        print tbl_antenna.header
+        
+        h1('\nCreating FREQUECY')
+        tbl_frequency = make_frequency(config=config_xml, num_rows=32)
+        print tbl_frequency.header
     
     def get_baseline_ids(self, ref_ant, triangle='upper'):
         """ Retrieve baseline ids """
@@ -268,14 +304,16 @@ class UvFits(object):
         n_bls    = self.n_ant*(self.n_ant-1)/2 + self.n_ant
         n_dumps = len(bls) / n_bls
         
-        lower_t, upper_t = True, True
+        lower_t, upper_t = False, False
         for i in range(n_dumps):
             if bls[i*n_bls:(i+1)*n_bls] == bl_lower:
                 #print "LOWER"
                 upper_t = False
+                lower_t = True
             if bls[i*n_bls:(i+1)*n_bls] == bl_upper:
                 #print "UPPER"
                 lower_t = False
+                upper_t = True
             
             if not lower_t and not upper_t:
                 raise VerificationError("Baseline order neither upper or lower triangular.")
@@ -291,180 +329,14 @@ class UvFits(object):
         """ Run a series of diagnostics to test data validity """
         h1("Data verification")
         self.verify_baseline_order()
-    
-    def plot_single_baseline(self, ant1, ant2, axis=0):
-        """ Plot single baseline 
-        
-        ant1: int
-            antenna number of first antenna
-        ant2: int
-            antenna number of second antenna
-        """
-        bls = self.d_uv_data['BASELINE']
-        
-        if ant1 > ant2: bl_id = 256*ant2 + ant1
-        else: bl_id = 256*ant1 + ant2
-        
-        x_data    = self.d_uv_data['DATA'][bls == bl_id,0,0,0,:,axis]  # Baselines, freq and stokes
-        x         = x_data[:,:,0] + 1j * x_data[:,:,1]
-        
-        fig = plt.figure(figsize=(4*3.5,3*3.2))
-        figtitle = '%s %s: %s -- %s\n'%(self.telescope, self.instrument, self.source, self.date_obs)
-        figtitle += "Baseline %i %i"%(ant1, ant2)
-        fig.suptitle(figtitle, fontsize=18)
-        ax = plt.subplot(121)
-        plt.imshow(np.abs(x))
-        plt.title("Amplitude")
-        plt.xlabel("Frequency channel")
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0])
-        plt.colorbar(orientation='horizontal')
-        
-        ax = plt.subplot(122)
-        plt.imshow(np.angle(x))
-        plt.title("Phase")
-        plt.xlabel("Frequency channel")
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0])
-        cbar = plt.colorbar(orientation='horizontal')
-        cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
-        cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
-        
-        plt.tight_layout()
-        plt.show()
-        
-    
-    def plot_visibilities(self, ref_ant=1, axis=0, plot_type='phase'):
-        """ Plot visibilities
-        
-        ref_ant: int
-            reference antenna
-        axis: int
-            which axis (stokes parameter) to view
-        plot_type: str
-            Plot type. Can be amplitude 'amp', phase 'phase'.
-        """
-        
-        bls = self.d_uv_data['BASELINE']
-
-        # Extract the relevant baselines using a truth array
-        bls = bls.tolist()
-        bl_ids = self.get_baseline_ids(ref_ant)
-        bl_truths = np.array([(b in bl_ids) for b in bls])
-        
-        x_data    = self.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes
-        x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
-        
-        
-        # Plot the figure
-        n_x, n_y = 4, 8
-        fig = plt.figure(figsize=(4*3.5,3*3.2))
-        figtitle = '%s %s: %s -- %s'%(self.telescope, self.instrument, self.source, self.date_obs)
-        for i in range(n_x):
-            for j in range(n_y):
-                ax = fig.add_subplot(n_x, n_y, i*n_y + j +1)
-                ax.set_title("%s %s"%(ref_ant, i*n_y + j +1))
-                #ax.set_title("%s %s"%(i, j))
-                x = x_cplx[i*n_y+j::self.n_ant]
-
-                #img.set_interpolation('nearest') # Bicubic etc
-                #img.set_cmap('jet')               # summer, hot, spectral, YlGnBu
-                
-                                
-                if plot_type == 'phase':
-                    img = ax.imshow(np.angle(x), vmin=-np.pi, vmax=np.pi)
-                elif plot_type == 'amp':
-                    img = ax.imshow(np.abs(x))
-                else:
-                    print "Error: plot_type %s not understood"%plot_type
-                    raise
-
-                if i == n_x-1:
-                    ax.set_xlabel('Freq')
-                if j == 0:
-                    ax.set_ylabel('Time')
-                ax.set_aspect(x.shape[1] / x.shape[0])
-        
-        if plot_type == 'phase':
-            # Add phase colorbar
-            cax = fig.add_axes([0.925,0.08,0.015,0.8])
-            cbar = fig.colorbar(img, cax=cax)
-            #cbar.set_label('Phase [rad]')
-            cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi])
-            cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
-                    
-            plt.subplots_adjust(left=0.05, right=0.9, top=0.9, bottom=0.05)
-        else:
-            plt.tight_layout()
-        plt.suptitle(figtitle)
-        plt.show()
-
-    def plot_autocorrs(self, axis=0):
-        """ Plot autocorrelations for all antennas
-        """
-        
-        bls = self.d_uv_data['BASELINE']
-
-        # Extract the relevant baselines using a truth array
-        bls = bls.tolist()
-        bl_ids = [256*i + i for i in range(1,33)]
-        bl_truths = np.array([(b in bl_ids) for b in bls])
-        
-        print self.d_uv_data['DATA'].shape
-        #x_data    = self.d_uv_data['DATA'][bl_truths,0,0,:,0,axis]  # Baselines, freq and stokes
-        x_data    = self.d_uv_data['DATA'][bl_truths, 0,0,0,:,axis,:]
-        x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
-        
-        print x_cplx.shape
-        
-        # Plot the figure
-        n_x, n_y = 4, 8
-        fig = plt.figure(figsize=(4*3.5,3*3.2))
-        figtitle = '%s %s: %s -- %s'%(self.telescope, self.instrument, self.source, self.date_obs)
-        for i in range(n_x):
-            for j in range(n_y):
-                ax = fig.add_subplot(n_x, n_y, i*n_y + j +1)
-                ax.set_title("%s"%( i*n_y + j +1))
-                #ax.set_title("%s %s"%(i, j))
-                
-                
-                x = x_cplx[i*n_y+j::self.n_ant]
-                
-                x_pow     = np.abs(x)
-                x_avg     = np.average(x_pow, axis=0)
-                x_max     = np.max(x_pow, axis=0)
-                x_med     = np.median(x_pow, axis=0)
-                x_min     = np.min(x_pow, axis=0)
-                
-                #img.set_interpolation('nearest') # Bicubic etc
-                #img.set_cmap('jet')               # summer, hot, spectral, YlGnBu
-                
-                ax.plot(x_avg)
-                ax.plot(x_min)
-                ax.plot(x_max)
-                
-                if i == n_x-1:
-                    ax.set_xlabel('Freq')
-                if j == 0:
-                    ax.set_ylabel('Amplitude')
-                #ax.set_aspect(x.shape[1] / x.shape[0])
-        
-
-        plt.tight_layout()
-        plt.suptitle(figtitle)
-        plt.show()
-
 
 
 if __name__ == '__main__':
     
-    filename = 'Test_0.uvfits'
-    uv = UvFits(filename)
+    #filename = 'Test_0.uvfits'
+    filename = 'band1.uvfits'
+    uv = InterFits(filename)
     
     uv.export_fitsidi('test.fitsidi', 'config/leda64.xml')
     
-    uv.verify()
-    
-    #uv.plot_autocorrs(axis=1)
-    #uv.plot_visibilities(ref_ant=5, axis=0, plot_type='phase')
-    #uv.plot_single_baseline(1, 16)
+    #uv.verify()
