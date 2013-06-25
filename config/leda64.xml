@@ -160,8 +160,7 @@
     -->
     
     <COMMON>
-       <OBSCODE>   'LEDA0001'      </OBSCODE>           
-       <RDATE>     '2013-01-01'    </RDATE>         
+       <OBSCODE>   'LEDA0001'      </OBSCODE>                  
        <NO_STKD>   params['NSTOKES']</NO_STKD>
        <STK_1>     -1              </STK_1>
        <NO_BAND>   params['NBAND'] </NO_BAND>
@@ -252,9 +251,10 @@
       <ARRAYX>   4461.122E+03   </ARRAYX>
       <ARRAYY>   919.46E+03     </ARRAYY>
       <ARRAYZ>   4449.776E+03   </ARRAYZ>
-      <ARRNAM>   'MEDICINA'     </ARRNAM>
+      <ARRNAM>   'LEDA 64x'     </ARRNAM>
+      <RDATE>    '2013-01-01'    </RDATE>  
       <NUMORB>   0              </NUMORB>
-      <FREQ>     408.0E+06      </FREQ> 
+      <FREQ>     common['REF_FREQ'] </FREQ> 
       <FRAME>    'GEOCENTRIC'   </FRAME>
       <TIMSYS>   'UTC'          </TIMSYS>
       <TIMESYS>  'UTC'          </TIMESYS>
@@ -366,9 +366,9 @@
     <CRVAL2>    -1.000E+00  </CRVAL2>
     <MAXIS3>    params['NCHAN'] </MAXIS3>
     <CTYPE3>    'FREQ'      </CTYPE3>
-    <CDELT3>    0.01953125E+06</CDELT3>
-    <CRPIX3>    1.00000E+00 </CRPIX3>
-    <CRVAL3>    398.000E+06 </CRVAL3>
+    <CDELT3>    0.01953125E+06 </CDELT3>
+    <CRPIX3>    1.00000E+00  </CRPIX3>
+    <CRVAL3>    398.000E+06  </CRVAL3>
     <MAXIS4>    params['NBAND'] </MAXIS4>
     <CTYPE4>    'BAND'      </CTYPE4>
     <CDELT4>    1.000E+00   </CDELT4>

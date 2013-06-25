@@ -456,7 +456,10 @@ num_rows: int
       
   return tblhdu
 
-def make_uv_data(config='config.xml', num_rows=1):
+def make_uv_data(config='config.xml', num_rows=1, uu_data=None, vv_data=None, ww_data=None,
+                date_data=None, time_data=None, baseline_data=None, filter_data=None, source_data=None,
+                freqid_data=None, inttim_data=None, weights_data=None, gateid_data=None,
+                flux_data=None, weights_col=False):
   """ Creates a vanilla UV_DATA table HDU
   
   Parameters
@@ -464,6 +467,11 @@ def make_uv_data(config='config.xml', num_rows=1):
   num_rows
     Number of rows in your UV dataset. For example, if you have 528 baselines 
     (inc. autocorr), then for 10 time dumps, you'll need 10*528 rows
+  weights: bool
+    Whether or not to include weights column. Defaults to False.
+  [xyz]_data: array of data
+    Defaults to None, in which case zeros are written. Much faster to write data in columns
+    than to loop through row by row.
   
   Notes
   -----
@@ -475,21 +483,13 @@ def make_uv_data(config='config.xml', num_rows=1):
   * DATE         UTC Julian day value for time 00:00:00  on the day of the observation
   * TIME         Fraction of Julian day from midnight to timestamp on day of observation.
   * BASELINE     Antenna baseline pair ID.
-  * FILTER       VLBA filter ID
   * SOURCE       Data source ID
   * FREQID       Data frequency setup ID
   * INTTIM       Data integration time
   * WEIGHT       Data weights (one element for each freq channel)
-  * GATEID       VLBA gate ID
   * FLUX         UV visibility data matrix
   
-  Parameters
-  ----------
-  config: string
-    filename of xml configuration file, defaults to 'config,xml'
-  num_rows: int
-    number of rows to generate. Rows will be filled with numpy zeros.
-    
+
   """
   c = []                
   
@@ -497,50 +497,45 @@ def make_uv_data(config='config.xml', num_rows=1):
   params = parseConfig('PARAMETERS', config)
   cards  = parseConfig('UV_DATA', config)
   common = parseConfig('COMMON', config)
-
-
+  
+  if uu_data == None: uu_data = np.zeros(num_rows,dtype='float32')
+  if vv_data == None: vv_data = np.zeros(num_rows,dtype='float32')
+  if ww_data == None: ww_data = np.zeros(num_rows,dtype='float32')
+  if date_data == None: date_data = np.zeros(num_rows,dtype='float64')
+  if time_data == None: time_data = np.zeros(num_rows,dtype='float64')
+  if baseline_data == None: baseline_data = np.zeros(num_rows,dtype='int32')
+  if source_data == None: source_data =np.zeros(num_rows,dtype='int32')
+  if freqid_data == None: freqid_data = np.zeros(num_rows,dtype='int32')
+  if inttim_data == None: inttim_data = np.zeros(num_rows,dtype='float32')
                                           
-  c.append(pf.Column(name='UU', format='1E',\
-    unit='SECONDS', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='VV',  format='1E',\
-    unit='SECONDS', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='WW',  format='1E',\
-    unit='SECONDS', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='DATE', format='1D',\
-    unit='DAYS', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='TIME', format='1D',\
-    unit='DAYS', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='BASELINE', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-
-  c.append(pf.Column(name='SOURCE',  format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='INTTIM', format='1E',\
-    unit='SECONDS', array=np.zeros(num_rows,dtype='float32')))
+  c.append(pf.Column(name='UU', format='1E', unit='SECONDS', array=uu_data))   
+  c.append(pf.Column(name='VV', format='1E', unit='SECONDS', array=vv_data))
+  c.append(pf.Column(name='WW', format='1E', unit='SECONDS', array=ww_data))
+  c.append(pf.Column(name='DATE', format='1D', unit='DAYS', array=date_data))
+  c.append(pf.Column(name='TIME', format='1D', unit='DAYS', array=time_data))
+  c.append(pf.Column(name='BASELINE', format='1J', array=baseline_data))
+  c.append(pf.Column(name='SOURCE',  format='1J',  array=source_data))  
+  c.append(pf.Column(name='FREQID', format='1J',   array=freqid_data))
+  c.append(pf.Column(name='INTTIM', format='1E', unit='SECONDS', array=inttim_data))
   
   # The following depends on number of stokes, number of bands and number of channels
   nchan   = params['NCHAN']
   nstokes = params['NSTOKES']
   nband   = params['NBAND']
+  flux_nbits = nchan * nstokes * nband * 2 # 2= Real & Im
+  weights_nbits = nstokes * nband  # 2= Real & Im
+  flux_format = '%iE'%flux_nbits
+  flux_dtype  = '%ifloat32'%flux_nbits
+  weights_format = '%iE'%weights_nbits
+  weights_dtype  = '%ifloat32'%weights_nbits
   
-  nbits = nchan * nstokes * nband * 2 # 2= Real & Im
-  format = '%iE'%nbits
-  dtype  = '%ifloat32'%nbits
+  if flux_data  == None:  flux_data = np.zeros(num_rows, dtype=flux_dtype)
+  if weights_data == None: weights_data = np.zeros(num_rows, dtype=weights_dtype)
   
-  c.append(pf.Column(name='WEIGHT', format=format,\
-    array=np.zeros(num_rows,dtype=dtype)))
-    
-  c.append(pf.Column(name='FLUX', format=format,\
-    unit='UNCALIB', array=np.zeros(num_rows,dtype=dtype)))  
+  c.append(pf.Column(name='FLUX', format=flux_format, unit='UNCALIB', array=flux_data))
+  
+  if weights_col:
+    c.append(pf.Column(name='WEIGHT', format=weights_format, array=weights_data))
   
   coldefs = pf.ColDefs(c)
   tblhdu = pf.new_table(coldefs)
@@ -548,8 +543,10 @@ def make_uv_data(config='config.xml', num_rows=1):
   for key in sorted(common): tblhdu.header.update(key, common[key])
   for key in sorted(cards): tblhdu.header.update(key, cards[key])
 
-        
   return tblhdu
+
+
+
 
 def make_interferometer_model(config='config.xml', num_rows=1):
   """

@@ -128,6 +128,7 @@ class InterFitsGui(QtGui.QWidget):
         self.plot_select.addItem("Multi baseline: Bandpass")
         self.plot_select.addItem("Multi baseline: Amplitude")
         self.plot_select.addItem("Multi baseline: Phase")
+        self.plot_select.addItem("UV coverage")
         self.plot_select.activated.connect(self.updateSpinners)
         
         self.current_plot = ""
@@ -585,6 +586,28 @@ class InterFitsGui(QtGui.QWidget):
         plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.05, wspace=0.25, hspace=0.3)
         return fig, ax
         
+    
+    def plot_uv(self):
+        """ Plot UV points. Just because its easy. """
+        self.current_plot = 'uv'
+        self.ax_zoomed = False
+        
+        uu = self.uv.d_uv_data['UU']*1e6
+        vv = self.uv.d_uv_data['VV']*1e6
+        
+        pmax, pmin = np.max([uu, vv])*1.1, np.min([uu,vv])*1.1
+        
+        fig = self.sp_fig
+        plt.subplot(111, aspect='equal')
+        ax = plt.plot(uu, vv, 'bo')
+       
+        plt.xlabel("UU [$\\mu s$]")
+        plt.ylabel("VV [$\\mu s$]")
+        plt.xlim(pmin, pmax)
+        plt.ylim(pmin, pmax)
+        return fig, ax
+        
+        
     def updatePlot(self):
         """ Update plot """
         self.sp_ax.clear()
@@ -610,7 +633,9 @@ class InterFitsGui(QtGui.QWidget):
         
         if self.plot_select.currentIndex() == 4:
             self.plot_visibilities(plot_type='phase', axis=axis, ref_ant=ref_ant)
-            
+
+        if self.plot_select.currentIndex() == 5:
+            self.plot_uv()            
         self.sp_canvas.draw()
         
     def updateSpinners(self):
