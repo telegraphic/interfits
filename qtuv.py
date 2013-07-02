@@ -124,18 +124,24 @@ class InterFitsGui(QtGui.QWidget):
         
         self.plot_select = QtGui.QComboBox(self)
         self.plot_select.addItem("Single Baseline")
-        self.plot_select.addItem("Single Baseline: dual pol")
+        self.plot_select.addItem("Single Baseline: Dual Pol")
         self.plot_select.addItem("Multi baseline: Bandpass")
         self.plot_select.addItem("Multi baseline: Amplitude")
         self.plot_select.addItem("Multi baseline: Phase")
         self.plot_select.addItem("UV coverage")
         self.plot_select.activated.connect(self.updateSpinners)
         
+        self.scale_select = QtGui.QComboBox(self)
+        self.scale_select.addItem("Linear")
+        self.scale_select.addItem("Decibel")
+        self.lscale_select = QtGui.QLabel("Scale")
+        
         self.current_plot = ""
         
         self.axes_select = QtGui.QComboBox(self)
         for v in ['Stokes I','Stokes Q','Stokes U','Stokes V']:
             self.axes_select.addItem(v)
+        
         
         # Create plots
         self.sp_fig, self.sp_ax = self.createBlankPlot()
@@ -149,6 +155,8 @@ class InterFitsGui(QtGui.QWidget):
         h_layout.addStretch(1)
         h_layout.addWidget(self.laxes_select)
         h_layout.addWidget(self.axes_select)
+        h_layout.addWidget(self.lscale_select)
+        h_layout.addWidget(self.scale_select)
         h_layout.addWidget(self.lspin_ref_ant)
         h_layout.addWidget(self.spin_ref_ant)
         h_layout.addWidget(self.lspin_ref_ant2)
@@ -186,11 +194,18 @@ class InterFitsGui(QtGui.QWidget):
                 self.updateSpinners()
             except:
                 print "Error: cannot open %s"%self.filename
-                #raise
+                raise
         
         self.setGeometry(300, 300, width, height)   
         self.show()
         
+        def on_draw(event):
+            """ Release event matplotlib """
+            #print "DRAWN!"
+            #if self.current_plot == 'single':
+            #    ax = self.current_ax
+            #    self.updateFreqAxis(ax)
+                        
         def on_click(event):
             """Enlarge or restore the selected axis."""
             ax = event.inaxes
@@ -205,9 +220,10 @@ class InterFitsGui(QtGui.QWidget):
                         # Change over to a single baseline plot
                         try:
                             self.ax_zoomed = True
+                            self.current_ax = ax
                             ax.set_position([0.1, 0.05, 0.85, 0.80])
                             ax.set_xlabel("Frequency")
-                            ax.set_ylabel("Time")
+                            #ax.set_ylabel("Time")
                             
                             for axis in self.sp_fig.axes:
                                 if axis is not ax:
@@ -255,7 +271,7 @@ class InterFitsGui(QtGui.QWidget):
                         ax.set_position([0.1, 0.1, 0.85, 0.85])
                         # TODO: fix labelling of zoom plots
                         ax.set_xlabel("Frequency")
-                        ax.set_ylabel("Time")
+                        #ax.set_ylabel("Time")
                         self.orig_position = ax.get_position()
                         for axis in event.canvas.figure.axes:
                            # Hide all the other axes...
@@ -271,8 +287,9 @@ class InterFitsGui(QtGui.QWidget):
                     
             event.canvas.draw()
                 
-        
+        h1("Loading PyQt GUI")
         self.fig_connect = self.sp_fig.canvas.mpl_connect('button_press_event', on_click)
+        self.fig_connect2 = self.sp_fig.canvas.mpl_connect('draw_event', on_draw)
     
     def createSpinner(self, label, action, smin=0, smax=1, step=1):
         """ Create a QtGui.QSpinner with sensible values """
@@ -323,6 +340,8 @@ class InterFitsGui(QtGui.QWidget):
         
         ax = plt.subplot(211)
         x_pow     = np.abs(x)
+        if self.scale_select.currentIndex() == 1: x_pow = 10*np.log10(x_pow)
+        
         #print x_pow.shape
         #x_avg    = np.average(x_pow, axis=0)
         x_max     = np.max(x_pow, axis=0)  
@@ -334,6 +353,7 @@ class InterFitsGui(QtGui.QWidget):
         ax.plot(x_max, label='max')
         plt.minorticks_on()
         plt.xlabel("Frequency")
+        self.updateFreqAxis(ax, n_ticks=10)
         plt.ylabel("Amplitude")
         plt.legend()
         
@@ -342,7 +362,10 @@ class InterFitsGui(QtGui.QWidget):
         plt.imshow(x_pow)
         plt.title("Amplitude")
         plt.xlabel("Frequency channel")
+        self.updateFreqAxis(ax, n_ticks=5)
         plt.ylabel("Time")
+        
+
         ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
         plt.colorbar(orientation='horizontal')
         
@@ -350,6 +373,7 @@ class InterFitsGui(QtGui.QWidget):
         plt.imshow(np.angle(x))
         plt.title("Phase")
         plt.xlabel("Frequency channel")
+        self.updateFreqAxis(ax, n_ticks=5)
         plt.ylabel("Time")
         ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
         cbar = plt.colorbar(orientation='horizontal')
@@ -359,7 +383,9 @@ class InterFitsGui(QtGui.QWidget):
         plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.05, wspace=0.25, hspace=0.3)
         
         return fig, ax
-
+        
+        
+    
     def plot_single_baseline_dual_pol(self, ant1, ant2, axis=0):
         """ Plot single baseline 
         
@@ -390,6 +416,9 @@ class InterFitsGui(QtGui.QWidget):
         
         ax = plt.subplot(221)
         x_pow     = np.abs(x)
+        if self.scale_select.currentIndex() == 1: 
+            x_pow = 10*np.log10(x_pow)
+            
         x_max     = np.max(x_pow, axis=0)  
         x_med     = np.median(x_pow, axis=0)
         x_min     = np.min(x_pow, axis=0)  
@@ -399,12 +428,16 @@ class InterFitsGui(QtGui.QWidget):
         ax.plot(x_max, label='max')
         plt.minorticks_on()
         plt.xlabel("Frequency")
+        self.updateFreqAxis(ax, n_ticks=10)
         plt.ylabel("Amplitude")
         plt.title(self.uv.stokes_axis[0])
         plt.legend()
 
         ax = plt.subplot(222)
         y_pow     = np.abs(y)
+        if self.scale_select.currentIndex() == 1: 
+            y_pow = 10*np.log10(y_pow)
+
         y_max     = np.max(y_pow, axis=0)  
         y_med     = np.median(y_pow, axis=0)
         y_min     = np.min(y_pow, axis=0)  
@@ -414,6 +447,7 @@ class InterFitsGui(QtGui.QWidget):
         ax.plot(y_max, label='max')
         plt.minorticks_on()
         plt.xlabel("Frequency")
+        self.updateFreqAxis(ax, n_ticks=10)
         plt.ylabel("Amplitude")
         plt.title(self.uv.stokes_axis[1])
         plt.legend()        
@@ -422,6 +456,7 @@ class InterFitsGui(QtGui.QWidget):
         plt.imshow(x_pow)
         plt.title("Amplitude")
         plt.xlabel("Frequency channel")
+        self.updateFreqAxis(ax)
         plt.ylabel("Time")
         ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
         plt.colorbar(orientation='horizontal')
@@ -430,6 +465,7 @@ class InterFitsGui(QtGui.QWidget):
         plt.imshow(np.angle(x))
         plt.title("Phase")
         plt.xlabel("Frequency channel")
+        self.updateFreqAxis(ax)
         plt.ylabel("Time")
         ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
         cbar = plt.colorbar(orientation='horizontal')
@@ -440,6 +476,7 @@ class InterFitsGui(QtGui.QWidget):
         plt.imshow(y_pow)
         plt.title("Amplitude")
         plt.xlabel("Frequency channel")
+        self.updateFreqAxis(ax)
         plt.ylabel("Time")
         ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
         plt.colorbar(orientation='horizontal')
@@ -448,6 +485,7 @@ class InterFitsGui(QtGui.QWidget):
         plt.imshow(np.angle(y))
         plt.title("Phase")
         plt.xlabel("Frequency channel")
+        self.updateFreqAxis(ax)
         plt.ylabel("Time")
         ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
         cbar = plt.colorbar(orientation='horizontal')
@@ -501,7 +539,11 @@ class InterFitsGui(QtGui.QWidget):
                 if plot_type == 'phase':
                     img = ax.imshow(np.angle(x), vmin=-np.pi, vmax=np.pi)
                 elif plot_type == 'amp':
-                    img = ax.imshow(np.abs(x))
+                    if self.scale_select.currentIndex() == 1: 
+                        x = 10*np.log10(np.abs(x))
+                    else: 
+                        x = np.abs(x)
+                    img = ax.imshow(x)
                 else:
                     print "Error: plot_type %s not understood"%plot_type
                     raise
@@ -562,7 +604,10 @@ class InterFitsGui(QtGui.QWidget):
                 
                 x = x_cplx[i*n_cols+j::self.uv.n_ant]
                 
-                x_pow     = np.abs(x)
+                if self.scale_select.currentIndex() == 1: 
+                    x_pow = 10*np.log10(np.abs(x))
+                else:
+                    x_pow     = np.abs(x)
                 #x_avg     = np.average(x_pow, axis=0)
                 x_max     = np.max(x_pow, axis=0)
                 x_med     = np.median(x_pow, axis=0)
@@ -571,9 +616,11 @@ class InterFitsGui(QtGui.QWidget):
                 ax.plot(x_med)
                 ax.plot(x_min)
                 ax.plot(x_max)
+                self.updateFreqAxis(ax)
                 
                 if i == n_rows-1:
                     ax.set_xlabel('Freq')
+                    
                 if j == 0:
                     ax.set_ylabel('Amplitude')
                 
@@ -583,7 +630,7 @@ class InterFitsGui(QtGui.QWidget):
                 plt.xticks(rotation=30)
                 #ax.set_aspect(x.shape[1] / x.shape[0])
         
-        plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.05, wspace=0.25, hspace=0.3)
+        plt.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.1, wspace=0.3, hspace=0.4)
         return fig, ax
         
     
@@ -594,13 +641,24 @@ class InterFitsGui(QtGui.QWidget):
         
         uu = self.uv.d_uv_data['UU']*1e6
         vv = self.uv.d_uv_data['VV']*1e6
-        
+        xx = self.uv.d_array_geometry['STABXYZ'][:,0]
+        yy = self.uv.d_array_geometry['STABXYZ'][:,1]
         pmax, pmin = np.max([uu, vv])*1.1, np.min([uu,vv])*1.1
+
         
         fig = self.sp_fig
-        plt.subplot(111, aspect='equal')
+        plt.subplot(121, aspect='equal')
+        ax = plt.plot(xx, yy, 'bo')
+        for i in range(len(xx)):
+            plt.text(xx[i], yy[i], self.uv.d_array_geometry['ANNAME'][i].strip('Stand').strip('Tile'))
+
+        plt.title("Antenna positions")
+        plt.xlabel("X [m]")
+        plt.ylabel("Y [m]")
+        
+        plt.subplot(122, aspect='equal')
         ax = plt.plot(uu, vv, 'bo')
-       
+        plt.title("UV data")
         plt.xlabel("UU [$\\mu s$]")
         plt.ylabel("VV [$\\mu s$]")
         plt.xlim(pmin, pmax)
@@ -613,8 +671,7 @@ class InterFitsGui(QtGui.QWidget):
         self.sp_ax.clear()
         self.sp_fig.clear()
         
-        self.updateSpinners()
-
+        
         axis = self.axes_select.currentIndex()
         ref_ant = self.spin_ref_ant.value()
         ref_ant2 = self.spin_ref_ant2.value()
@@ -635,7 +692,9 @@ class InterFitsGui(QtGui.QWidget):
             self.plot_visibilities(plot_type='phase', axis=axis, ref_ant=ref_ant)
 
         if self.plot_select.currentIndex() == 5:
-            self.plot_uv()            
+            self.plot_uv()   
+                     
+        self.updateSpinners()
         self.sp_canvas.draw()
         
     def updateSpinners(self):
@@ -662,6 +721,24 @@ class InterFitsGui(QtGui.QWidget):
     def updateAxes(self):
         """ Spinner action: update data axes """
         pass
+    
+    def updateFreqAxis(self, ax, n_ticks=5):
+        """ Update frequency axis of imshow plot """
+        rf  = self.uv.d_frequency['REF_FREQ'] /1e6      
+        chw = self.uv.d_frequency['CH_WIDTH']       
+        bw  = self.uv.d_frequency['TOTAL_BANDWIDTH'] / 1e6
+        
+        ticks = ax.get_xticks()
+        #print ticks
+        tmin, tmax = np.min(ticks), np.max(ticks)
+        if tmin < 0: tmin = 0
+        #print tmin, tmax
+        tlocs = map(int, np.linspace(tmin, tmax, n_ticks))
+        tlabs = np.linspace(rf-bw/2, rf+bw/2, n_ticks)
+        #print tlocs
+        #print tlabs
+        ax.set_xticks(tlocs)
+        ax.set_xticklabels(tlabs)
     
     def onFileOpen(self):
         """ Do this whenever a new file is opened """

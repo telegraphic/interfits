@@ -94,13 +94,23 @@ class InterFits(object):
             regex = '([0-9A-Za-z-_]+).hdf'
             match = re.search(regex, filename)
             if match: self.readFile('hdf5')
+            
+            regex = '([0-9A-Za-z-_]+).LA'
+            match = re.search(regex, filename)
+            if match: self.readFile('lfile')
+            
+            regex = '([0-9A-Za-z-_]+).LC'
+            match = re.search(regex, filename)
+            if match: self.readFile('lfile')
+            
     
     def readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
         return {
              'uvfits'  : self.readUvfits,
              'fitsidi' : self.readFitsidi,
-             'hdf5'    : self.readHdf5
+             'hdf5'    : self.readHdf5,
+             'lfile'   : self.readLfile
               }.get(filetype)()
         
     def searchKeys(self, pattern, header):
@@ -264,7 +274,93 @@ class InterFits(object):
     def readHdf5(self):
         """ TODO """
         pass
-    
+        
+    def readLfile(self, filename, flavor='OV64'):
+        """ Read a LEDA L-file 
+        
+        filename: str
+            name of L-file
+        flavor: str
+            What version / type of L-file is this? Defaults to
+            'OV64' for Owen's Valley LEDA64.
+        
+        Notes
+        -----
+        .LA files store autocorrelations in the following way:
+        
+        t0 |Ant1 600 chans XX | Ant1 600 chans YY| Ant2 ... | AntN ...
+        t1 |Ant1 600 chans XX | Ant1 600 chans YY| Ant2 ... | AntN ...
+        
+        .LC files store ant1 XY and are upper triangular, so
+        1x1y| 1x2x | 1x2y | ... | 1x32y | 
+              2x2y | 2x3x | ... |  ...  |
+                     3x3y | ... |  ...  |
+        """
+        h1("Opening L-file")
+        if flavor == 'OV64':
+            n_chans = 600
+            n_ant    = 32
+            n_pol    = 2
+            n_antpol = n_ant*n_pol
+            n_stk    = 4
+            n_blcc   = n_antpol * (n_antpol - 1) / 2 
+
+            filename = filename.rstrip('.LA').rstrip('.LC')
+        
+            # Autocorrs
+            # Axes are time, ra, dec, band, freq, stokes, re, im
+            h2("Opening autocorrs (.LA)")
+            lfa = np.fromfile(filename+'.LA', dtype='float32')
+            lfa = lfa.reshape([len(lfa)/n_chans/n_antpol, n_antpol, n_chans,1])
+            lfa = np.concatenate((lfa, np.zeros_like(lfa)),axis=3)
+            print lfa.shape
+            
+            # Cross-corrs
+            h2("Opening cross-corrs (.LA)")
+            lfc = np.fromfile(filename+'.LC', dtype='float32')
+            lfc = lfc.reshape([len(lfc)/n_chans/n_blcc/2, n_blcc, n_chans, 2])
+            print lfc.shape
+            
+            h2("Forming visibility matrix")
+            # Create a visibility matrix, and use indexing to populate upper triangle
+            vis = np.zeros([lfa.shape[0],64,64,600,2])
+            iup = np.triu_indices(64,1)
+            idiag = (np.arange(0,64), np.arange(0,64))
+            
+            for i in range(0, vis.shape[0]):
+                LinePrint("%i of %i"%(i, vis.shape[0]))
+                vis[i][iup]   = lfc[i]
+                vis[i][idiag] = lfa[i]
+            print "\n", vis.shape
+            
+            uv = vis[0]
+            
+            h2("Converting to data interchange standard")
+            bl_lower, bl_upper = [], []
+            for i in range(1, n_ant+1):
+                for j in range(1, n_ant+1):
+                    if j >= i: bl_lower.append(256*i + j)
+                    elif j <= i: bl_upper.append(256*j + i)
+            
+            
+            
+            
+            #lfa = lfa.reshape([n_time, 1,1,1, n_pol, n_chans])
+            #lfa = lfa.swapaxes(4, 5)
+            #lfa = lfa.reshape([n_time, 1,1,1, n_chans, n_pol,1])
+            #
+            ## Need to add imaginary axis and other stokes
+            #lfa_i = np.zeros_like(lfa)
+            #lfa = np.concatenate((lfa, lfa_i), axis=6)
+            #lfa_s = np.zeros_like(lfa)
+            #lfa = np.concatenate((lfa, lfa_s), axis=5)
+            #print lfa.shape
+            
+            
+        else:
+            raise Exception("Unknown flavor: %s"%flavor)
+        
+            
     def setXml(self, table, keyword, value):
         """ Find a header parameter and replace it """
         
@@ -531,6 +627,9 @@ if __name__ == '__main__':
     uv = InterFits(filename)
     
     #uv.generateFitsidiXml('config/leda64.xml', 'config/generated.xml')
-    uv.export_fitsidi('test2.fitsidi', 'config/generated.xml')
+    #uv.export_fitsidi('test2.fitsidi', 'config/generated.xml')
+    
+    filename = '../data/band1_gpu6_data12_2013-06-16-04_53_15.dada_0.LA'
+    uv.readLfile(filename, flavor='OV64')
     
     #uv.verify()
