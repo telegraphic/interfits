@@ -41,9 +41,12 @@ except:
     
 try:    
     import numpy as np
+    from scipy.stats import skew, kurtosis
 except:
-    print "Error: cannot load Numpy. Please check your install."
+    print "Error: cannot load Numpy / Scipy. Please check your install."
     exit()
+
+
 
 try:    
     import pyfits as pf
@@ -125,15 +128,19 @@ class InterFitsGui(QtGui.QWidget):
         self.plot_select = QtGui.QComboBox(self)
         self.plot_select.addItem("Single Baseline")
         self.plot_select.addItem("Single Baseline: Dual Pol")
-        self.plot_select.addItem("Multi baseline: Bandpass")
+        self.plot_select.addItem("Multi baseline: Autocorrs")
         self.plot_select.addItem("Multi baseline: Amplitude")
         self.plot_select.addItem("Multi baseline: Phase")
         self.plot_select.addItem("UV coverage")
         self.plot_select.activated.connect(self.updateSpinners)
         
+        
         self.scale_select = QtGui.QComboBox(self)
-        self.scale_select.addItem("Linear")
-        self.scale_select.addItem("Decibel")
+        self.scale_select.addItem("Power (linear)")
+        self.scale_select.addItem("Power (decibel)")
+        self.scale_select.addItem("Variance")
+        self.scale_select.addItem("Skew")
+        self.scale_select.addItem("Kurtosis")
         self.lscale_select = QtGui.QLabel("Scale")
         
         self.current_plot = ""
@@ -312,7 +319,68 @@ class InterFitsGui(QtGui.QWidget):
           fig.canvas.draw()
       
           return fig, ax
-    
+
+    def plot_spectrum(self, ax, data, stat=None, label_axes=True):
+        """ Compute and plot spectral statistic. 
+        
+        If stat is set to None, will use currentIndex of stat_select combo box
+        """
+        x_pow = np.abs(data)
+        if stat == None:
+            if self.scale_select.currentIndex() == 0:
+                ax.plot(x_pow, label='linear')
+            elif self.scale_select.currentIndex() == 1:
+                ax.plot(10*np.log10(x_pow), label='decibels')
+            elif self.scale_select.currentIndex() == 2:
+                ax.plot(np.var(x_pow, axis=0), label='variance')
+            elif self.scale_select.currentIndex() == 3:
+                ax.plot(skew(x_pow, axis=0), label='skew')
+            elif self.scale_select.currentIndex() == 4:
+                ax.plot(kurtosis(x_pow, axis=0), label='kurtosis')
+        else:
+            
+            if self.scale_select.currentIndex() == 1:
+                x_pow = 10*np.log10(x_pow)
+            if stat == 'median' or stat == 'med':
+                ax.plot(np.median(x_pow, axis=0), label='median')
+            if stat == 'min':
+                ax.plot(np.min(x_pow, axis=0), label='min')
+            if stat == 'max':
+                ax.plot(np.max(x_pow, axis=0), label='max')
+        
+        plt.minorticks_on()
+        if label_axes:
+            self.updateFreqAxis(ax, n_ticks=10)
+            plt.xlabel("Frequency")
+            plt.ylabel("Amplitude")
+            plt.legend()
+
+    def plot_imshow(self, ax, data, stat=None, show_cbar=False, label_axes=True):
+        """ Imshow plotter """
+        if stat == 'amp':
+            if self.scale_select.currentIndex() != 1:
+                img = ax.imshow(np.abs(data))
+            else:
+                img = ax.imshow(10*np.log10(np.abs(data)))
+            if label_axes: plt.title("Amplitude")
+            if show_cbar:
+                cbar = self.sp_fig.colorbar(img, orientation='horizontal')
+        if stat == 'phase':
+            img = ax.imshow(np.angle(data), vmin=-np.pi, vmax=np.pi)
+            if label_axes: plt.title("Phase")
+            if show_cbar:
+                cbar = self.sp_fig.colorbar(img, orientation='horizontal')
+                cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
+                cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
+                  
+        ax.set_aspect(data.shape[1] / data.shape[0] * 3. / 4)
+        if label_axes:
+            self.updateFreqAxis(ax, n_ticks=5)
+            plt.ylabel("Time")
+            plt.xlabel("Frequency")
+        
+        return img
+        
     def plot_single_baseline(self, ant1, ant2, axis=0):
         """ Plot single baseline 
         
@@ -333,58 +401,25 @@ class InterFitsGui(QtGui.QWidget):
         
         fig = self.sp_fig
         self.ax_zoomed = False
-        
         figtitle = '%s %s: %s -- %s\n'%(self.uv.telescope, self.uv.instrument, self.uv.source, self.uv.date_obs)
-        figtitle += "Baseline %i %i"%(ant1, ant2)
+        figtitle += "Baseline %s %s"%(self.uv.d_array_geometry['ANNAME'][ant1-1], self.uv.d_array_geometry['ANNAME'][ant2-1])
         fig.suptitle(figtitle, fontsize=18)
         
         ax = plt.subplot(211)
-        x_pow     = np.abs(x)
-        if self.scale_select.currentIndex() == 1: x_pow = 10*np.log10(x_pow)
-        
-        #print x_pow.shape
-        #x_avg    = np.average(x_pow, axis=0)
-        x_max     = np.max(x_pow, axis=0)  
-        x_med     = np.median(x_pow, axis=0)
-        x_min     = np.min(x_pow, axis=0)  
-        
-        ax.plot(x_med, label='median')
-        ax.plot(x_min, label='min')
-        ax.plot(x_max, label='max')
-        plt.minorticks_on()
-        plt.xlabel("Frequency")
-        self.updateFreqAxis(ax, n_ticks=10)
-        plt.ylabel("Amplitude")
-        plt.legend()
-        
+        if self.scale_select.currentIndex() == 0 or self.scale_select.currentIndex() == 1:
+            self.plot_spectrum(ax, x, stat='med')
+            self.plot_spectrum(ax, x, stat='min')
+            self.plot_spectrum(ax, x, stat='max')
+        else:
+            self.plot_spectrum(ax, x)
         
         ax = plt.subplot(223)
-        plt.imshow(x_pow)
-        plt.title("Amplitude")
-        plt.xlabel("Frequency channel")
-        self.updateFreqAxis(ax, n_ticks=5)
-        plt.ylabel("Time")
-        
-
-        ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
-        plt.colorbar(orientation='horizontal')
-        
+        img = self.plot_imshow(ax, x, stat='amp', show_cbar=True)
         ax = plt.subplot(224)
-        plt.imshow(np.angle(x))
-        plt.title("Phase")
-        plt.xlabel("Frequency channel")
-        self.updateFreqAxis(ax, n_ticks=5)
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
-        cbar = plt.colorbar(orientation='horizontal')
-        cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
-        cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
-        
+        img = self.plot_imshow(ax, x, stat='phase', show_cbar=True)
         plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.05, wspace=0.25, hspace=0.3)
         
         return fig, ax
-        
-        
     
     def plot_single_baseline_dual_pol(self, ant1, ant2, axis=0):
         """ Plot single baseline 
@@ -411,88 +446,37 @@ class InterFitsGui(QtGui.QWidget):
         self.ax_zoomed = False
         
         figtitle = '%s %s: %s -- %s\n'%(self.uv.telescope, self.uv.instrument, self.uv.source, self.uv.date_obs)
-        figtitle += "Baseline %i %i"%(ant1, ant2)
+        figtitle += "Baseline %s %s"%(self.uv.d_array_geometry['ANNAME'][ant1-1], self.uv.d_array_geometry['ANNAME'][ant2-1])
         fig.suptitle(figtitle, fontsize=18)
         
         ax = plt.subplot(221)
-        x_pow     = np.abs(x)
-        if self.scale_select.currentIndex() == 1: 
-            x_pow = 10*np.log10(x_pow)
-            
-        x_max     = np.max(x_pow, axis=0)  
-        x_med     = np.median(x_pow, axis=0)
-        x_min     = np.min(x_pow, axis=0)  
-        
-        ax.plot(x_med, label='median')
-        ax.plot(x_min, label='min')
-        ax.plot(x_max, label='max')
-        plt.minorticks_on()
-        plt.xlabel("Frequency")
-        self.updateFreqAxis(ax, n_ticks=10)
-        plt.ylabel("Amplitude")
-        plt.title(self.uv.stokes_axis[0])
-        plt.legend()
+        if self.scale_select.currentIndex() == 0 or self.scale_select.currentIndex() == 1:
+            self.plot_spectrum(ax, x, stat='med')
+            self.plot_spectrum(ax, x, stat='min')
+            self.plot_spectrum(ax, x, stat='max')
+        else:
+            self.plot_spectrum(ax, x)
+
 
         ax = plt.subplot(222)
-        y_pow     = np.abs(y)
-        if self.scale_select.currentIndex() == 1: 
-            y_pow = 10*np.log10(y_pow)
-
-        y_max     = np.max(y_pow, axis=0)  
-        y_med     = np.median(y_pow, axis=0)
-        y_min     = np.min(y_pow, axis=0)  
-        
-        ax.plot(y_med, label='median')
-        ax.plot(y_min, label='min')
-        ax.plot(y_max, label='max')
-        plt.minorticks_on()
-        plt.xlabel("Frequency")
-        self.updateFreqAxis(ax, n_ticks=10)
-        plt.ylabel("Amplitude")
-        plt.title(self.uv.stokes_axis[1])
-        plt.legend()        
-        
+        if self.scale_select.currentIndex() == 0 or self.scale_select.currentIndex() == 1:
+            self.plot_spectrum(ax, y, stat='med')
+            self.plot_spectrum(ax, y, stat='min')
+            self.plot_spectrum(ax, y, stat='max')
+        else:
+            self.plot_spectrum(ax, y)
+      
         ax = plt.subplot(245)
-        plt.imshow(x_pow)
-        plt.title("Amplitude")
-        plt.xlabel("Frequency channel")
-        self.updateFreqAxis(ax)
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
-        plt.colorbar(orientation='horizontal')
-        
+        img = self.plot_imshow(ax, x, stat='amp', show_cbar=True)
         ax = plt.subplot(246)
-        plt.imshow(np.angle(x))
-        plt.title("Phase")
-        plt.xlabel("Frequency channel")
-        self.updateFreqAxis(ax)
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
-        cbar = plt.colorbar(orientation='horizontal')
-        cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
-        cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
+        img = self.plot_imshow(ax, x, stat='phase', show_cbar=True)
         
         ax = plt.subplot(247)
-        plt.imshow(y_pow)
-        plt.title("Amplitude")
-        plt.xlabel("Frequency channel")
-        self.updateFreqAxis(ax)
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
-        plt.colorbar(orientation='horizontal')
-        
+        img = self.plot_imshow(ax, x, stat='amp', show_cbar=True)
         ax = plt.subplot(248)
-        plt.imshow(np.angle(y))
-        plt.title("Phase")
-        plt.xlabel("Frequency channel")
-        self.updateFreqAxis(ax)
-        plt.ylabel("Time")
-        ax.set_aspect(x.shape[1] / x.shape[0] * 3. / 4)
-        cbar = plt.colorbar(orientation='horizontal')
-        cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
-        cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
+        img = self.plot_imshow(ax, x, stat='phase', show_cbar=True)
         
-        plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.05, wspace=0.25, hspace=0.3)
+        plt.subplots_adjust(left=0.05, right=0.98, top=0.87, bottom=0.05, wspace=0.25, hspace=0.3)
         
         return fig, ax
     
@@ -528,26 +512,12 @@ class InterFitsGui(QtGui.QWidget):
         for i in range(n_rows):
             for j in range(n_cols):
                 ax = fig.add_subplot(n_rows, n_cols, i*n_cols + j +1)
-                ax.set_title("%s %s"%(ref_ant, i*n_cols + j +1))
+                
                 #ax.set_title("%s %s"%(i, j))
                 x = x_cplx[i*n_cols+j::self.uv.n_ant]
-
-                #img.set_interpolation('nearest') # Bicubic etc
-                #img.set_cmap('jet')               # summer, hot, spectral, YlGnBu
                 
-                                
-                if plot_type == 'phase':
-                    img = ax.imshow(np.angle(x), vmin=-np.pi, vmax=np.pi)
-                elif plot_type == 'amp':
-                    if self.scale_select.currentIndex() == 1: 
-                        x = 10*np.log10(np.abs(x))
-                    else: 
-                        x = np.abs(x)
-                    img = ax.imshow(x)
-                else:
-                    print "Error: plot_type %s not understood"%plot_type
-                    raise
-
+                img = self.plot_imshow(ax, x, stat=plot_type, show_cbar=False, label_axes=False)                
+                
                 if i == n_rows-1:
                     ax.set_xlabel('Freq')
                 else: 
@@ -557,6 +527,9 @@ class InterFitsGui(QtGui.QWidget):
                 else:
                     ax.set_ylabel('')
                 ax.set_aspect(x.shape[1] / x.shape[0])
+                ax.set_title("%s %s"%(ref_ant, i*n_cols + j +1))
+                self.updateFreqAxis(ax)
+                plt.xticks(rotation=30)
         
         if plot_type == 'phase':
             # Add phase colorbar
@@ -599,28 +572,21 @@ class InterFitsGui(QtGui.QWidget):
         for i in range(n_rows):
             for j in range(n_cols):
                 ax = fig.add_subplot(n_rows, n_cols, i*n_cols + j +1)
-                ax.set_title("%s"%( i*n_cols + j +1))
+                ax.set_title(self.uv.d_array_geometry['ANNAME'][i*n_cols + j], fontsize=10)
                 #ax.set_title("%s %s"%(i, j))
                 
                 x = x_cplx[i*n_cols+j::self.uv.n_ant]
                 
-                if self.scale_select.currentIndex() == 1: 
-                    x_pow = 10*np.log10(np.abs(x))
+                if self.scale_select.currentIndex() == 0 or self.scale_select.currentIndex() == 1:
+                    self.plot_spectrum(ax, x, stat='max', label_axes=False)
+                    self.plot_spectrum(ax, x, stat='med', label_axes=False)
+                    self.plot_spectrum(ax, x, stat='min', label_axes=False)
                 else:
-                    x_pow     = np.abs(x)
-                #x_avg     = np.average(x_pow, axis=0)
-                x_max     = np.max(x_pow, axis=0)
-                x_med     = np.median(x_pow, axis=0)
-                x_min     = np.min(x_pow, axis=0)
-                
-                ax.plot(x_med)
-                ax.plot(x_min)
-                ax.plot(x_max)
+                    self.plot_spectrum(ax, x, label_axes=False)
                 self.updateFreqAxis(ax)
                 
                 if i == n_rows-1:
                     ax.set_xlabel('Freq')
-                    
                 if j == 0:
                     ax.set_ylabel('Amplitude')
                 
@@ -628,9 +594,8 @@ class InterFitsGui(QtGui.QWidget):
                 plt.tick_params(axis='both', which='major', labelsize=10)
                 plt.tick_params(axis='both', which='minor', labelsize=8)
                 plt.xticks(rotation=30)
-                #ax.set_aspect(x.shape[1] / x.shape[0])
         
-        plt.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.1, wspace=0.3, hspace=0.4)
+        plt.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.1, wspace=0.3, hspace=0.45)
         return fig, ax
         
     
@@ -708,15 +673,12 @@ class InterFitsGui(QtGui.QWidget):
         ref_ant2 = self.spin_ref_ant2.value()
         
         if self.current_plot == 'single':
+            self.spin_ref_ant.setEnabled(True)
             self.spin_ref_ant2.setEnabled(True)
-        else:
-            self.spin_ref_ant2.setDisabled(True)
         
         if self.current_plot == 'multi':
-            self.spin_ref_ant.setEnabled(False)
-        else:
             self.spin_ref_ant.setEnabled(True)
-        
+            self.spin_ref_ant2.setEnabled(False)
                       
     def updateAxes(self):
         """ Spinner action: update data axes """
