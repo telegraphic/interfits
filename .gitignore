@@ -1,4 +1,5 @@
 *.uvfits
+*.fitsidi
 *.pyc
-test/
 old/
+.idea/
