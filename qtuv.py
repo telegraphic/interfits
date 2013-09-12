@@ -93,8 +93,6 @@ class InterFitsGui(QtGui.QWidget):
         self.filename = filename
         self.current_row = 0
         self.initUI(width=1200, height=800)
-        
-       
 
     def initUI(self, width=1200, height=800):
         """ Initialize the User Interface 
@@ -396,9 +394,11 @@ class InterFitsGui(QtGui.QWidget):
         if ant1 > ant2: bl_id = 256*ant2 + ant1
         else: bl_id = 256*ant1 + ant2
         
-        x_data    = self.uv.d_uv_data['DATA'][bls == bl_id,0,0,0,:,axis]  # Baselines, freq and stokes
-        x         = x_data[:,:,0] + 1j * x_data[:,:,1]
-        
+        #x_data    = self.uv.d_uv_data['FLUX'][bls == bl_id,:,axis]  # Baselines, freq and stokes
+        #x         = x_data[:,:,0] + 1j * x_data[:,:,1]
+
+        x = self.stokes[axis][bls == bl_id]
+
         fig = self.sp_fig
         self.ax_zoomed = False
         figtitle = '%s %s: %s -- %s\n'%(self.uv.telescope, self.uv.instrument, self.uv.source, self.uv.date_obs)
@@ -436,12 +436,10 @@ class InterFitsGui(QtGui.QWidget):
         if ant1 > ant2: bl_id = 256*ant2 + ant1
         else: bl_id = 256*ant1 + ant2
         
-        x_data    = self.uv.d_uv_data['DATA'][bls == bl_id,0,0,0,:,0]  # Baselines, freq and stokes
-        x         = x_data[:,:,0] + 1j * x_data[:,:,1]
-
-        y_data    = self.uv.d_uv_data['DATA'][bls == bl_id,0,0,0,:,1]  # Baselines, freq and stokes
-        y         = y_data[:,:,0] + 1j * y_data[:,:,1]
         
+        x = self.stokes[0][bls == bl_id]
+        y = self.stokes[1][bls == bl_id]
+
         fig = self.sp_fig
         self.ax_zoomed = False
         
@@ -456,7 +454,6 @@ class InterFitsGui(QtGui.QWidget):
             self.plot_spectrum(ax, x, stat='max')
         else:
             self.plot_spectrum(ax, x)
-
 
         ax = plt.subplot(222)
         if self.scale_select.currentIndex() == 0 or self.scale_select.currentIndex() == 1:
@@ -501,9 +498,9 @@ class InterFitsGui(QtGui.QWidget):
         bl_ids = self.uv.get_baseline_ids(ref_ant)
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
-        x_data    = self.uv.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes
-        x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
-        
+        #x_data    = self.uv.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes
+        #x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
+        x_cplx = self.stokes[axis][bl_truths]
         
         # Plot the figure
         fig = self.sp_fig
@@ -560,9 +557,10 @@ class InterFitsGui(QtGui.QWidget):
         
         #print self.uv.d_uv_data['DATA'].shape
         #x_data    = self.d_uv_data['DATA'][bl_truths,0,0,:,0,axis]  # Baselines, freq and stokes
-        x_data    = self.uv.d_uv_data['DATA'][bl_truths, 0,0,0,:,axis,:]
-        x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
-        
+        #x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
+
+        x_cplx  = self.stokes[axis][bl_truths]
+
         #print x_cplx.shape
         
         # Plot the figure
@@ -597,7 +595,6 @@ class InterFitsGui(QtGui.QWidget):
         
         plt.subplots_adjust(left=0.05, right=0.98, top=0.95, bottom=0.1, wspace=0.3, hspace=0.45)
         return fig, ax
-        
     
     def plot_uv(self):
         """ Plot UV points. Just because its easy. """
@@ -622,15 +619,14 @@ class InterFitsGui(QtGui.QWidget):
         plt.ylabel("Y [m]")
         
         plt.subplot(122, aspect='equal')
-        ax = plt.plot(uu, vv, 'bo')
+        ax = plt.plot(uu, vv, 'b.')
         plt.title("UV data")
         plt.xlabel("UU [$\\mu s$]")
         plt.ylabel("VV [$\\mu s$]")
         plt.xlim(pmin, pmax)
         plt.ylim(pmin, pmax)
         return fig, ax
-        
-        
+
     def updatePlot(self):
         """ Update plot """
         self.sp_ax.clear()
@@ -686,10 +682,10 @@ class InterFitsGui(QtGui.QWidget):
     
     def updateFreqAxis(self, ax, n_ticks=5):
         """ Update frequency axis of imshow plot """
-        rf  = self.uv.d_frequency['REF_FREQ'] /1e6      
-        chw = self.uv.d_frequency['CH_WIDTH']       
+        rf  = self.uv.h_common['REF_FREQ'] /1e6
+        chw = self.uv.d_frequency['CH_WIDTH']
         bw  = self.uv.d_frequency['TOTAL_BANDWIDTH'] / 1e6
-        
+
         ticks = ax.get_xticks()
         #print ticks
         tmin, tmax = np.min(ticks), np.max(ticks)
@@ -700,10 +696,13 @@ class InterFitsGui(QtGui.QWidget):
         #print tlocs
         #print tlabs
         ax.set_xticks(tlocs)
-        ax.set_xticklabels(tlabs)
+        ax.set_xticklabels(["%2.2f"%tt for tt in tlabs])
     
     def onFileOpen(self):
         """ Do this whenever a new file is opened """
+
+        self.stokes = self.uv.formatStokes()
+
         # Recreate combobox whenever file is loaded
         c_ind = self.axes_select.currentIndex()
         for i in range(self.axes_select.count()):
@@ -712,6 +711,7 @@ class InterFitsGui(QtGui.QWidget):
             self.axes_select.addItem(v)
         if self.axes_select.count() <= c_ind:
             self.axes_select.setCurrentIndex(c_ind)
+
             
     def onButOpen(self):
         """ Button action: Open station file """
@@ -731,6 +731,8 @@ class InterFitsGui(QtGui.QWidget):
             filename = fileparts[0]
         
         self.uv = InterFits(filename)
+
+
 
         self.onFileOpen()
         self.updatePlot()

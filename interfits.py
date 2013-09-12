@@ -8,13 +8,16 @@ reads a uvfits file and loads it into InterFits class
 
 """
 
-import sys, os, re
-import pyfits as pf, numpy as np
+import sys
+import os
+import re
+
+import pyfits as pf
+import numpy as np
 from lxml import etree
 
-import pylab as plt
+from lib.pyFitsidi import *
 
-from pyFitsidi import *
 
 class LinePrint():
     """
@@ -58,7 +61,8 @@ class InterFits(object):
         self.h_array_geometry = {}
         self.h_source = {}
         self.h_uv_data = {}
-        self.h_frequncy = {}
+        self.h_frequency = {}
+        self.h_common = {}
         
         self.d_antenna = {}
         self.d_array_geometry = {}
@@ -103,6 +107,14 @@ class InterFits(object):
             match = re.search(regex, filename)
             if match: self.readFile('lfile')
             
+    
+    def __repr__(self):
+        to_print = ""
+        to_print += "Telescope:  %s\n"%self.telescope
+        to_print += "Instrument: %s\n"%self.instrument
+        to_print += "Object:     %s\n"%self.source
+        to_print += "Date obs:   %s\n"%self.date_obs
+        return to_print
     
     def readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
@@ -218,11 +230,15 @@ class InterFits(object):
         
         ch_width = float(self.uvhead['CDELT%s'%freq_cid])
         ref_freq = float(self.uvhead['CRVAL%s'%freq_cid])
+        ref_pixl = float(self.uvhead['CRPIX%s'%freq_cid])
         bw       = ch_width * int(self.uvhead['NAXIS%s'%freq_cid])
-        self.d_frequency['REF_FREQ']        = ref_freq
-        self.d_frequency['CH_WIDTH']        = ch_width
+        self.h_common['REF_FREQ']        = ref_freq
+        self.h_common['CHAN_BW']         = ch_width
+        self.h_common['REF_PIXL']        = ref_pixl
+
         self.d_frequency['TOTAL_BANDWIDTH'] = bw
-        
+        self.d_frequency['CH_WIDTH'] = ch_width
+
         # Load source table data
         h2("Loading source table")
         self.d_source['SOURCE'] = self.source
@@ -231,9 +247,10 @@ class InterFits(object):
         
         # Load UV-DATA
         h2("Loading UV-data")
+        self.h_uv_data['TELESCOP'] = self.telescope
         uv_datacols = ['UU','VV','WW','BASELINE','DATE']
         for k in uv_datacols: self.d_uv_data[k] = self.uvdata[k]
-        
+
         s = self.uvdata['DATA'].shape
         
         # Find stokes axis type and values
@@ -262,14 +279,167 @@ class InterFits(object):
         else:
             self.d_uv_data['DATA'] = self.uvdata['DATA']
 
-        
+        # Best line in the history of indexing below
+        # Note the 0:2 and *2 at the end is to not include weights
         self.d_uv_data['FLUX'] = self.d_uv_data['DATA'][:,:,:,:,:,:,0:2].reshape(s[0], s[3]*s[4]*2)
         #print self.d_uv_data['FLUX'].shape
-    
+
+        num_rows = self.d_uv_data['FLUX'].shape[0]
+
+        print "NOTE: Setting INTTIM to 1.0 (not supplied by uvfits)."
+        print "NOTE: Setting FREQID to 1 (for FITS-IDI tables)"
+        print "NOTE: Setting SOURCE to 1 (for FITS-IDI tables)"
+        self.d_uv_data['INTTIM'] = np.ones(num_rows)
+        self.d_uv_data['FREQID'] = np.ones(num_rows)
+        self.d_uv_data['SOURCE'] = np.ones(num_rows)
     
     def readFitsidi(self):
-        """ TODO """
-        pass
+        """ Open and read the contents of a FITS-IDI file 
+        
+        Notes
+        -----
+        
+        Regular axes for Data matrix
+        (from FITS-IDI document, assuming uv-fits adheres)
+        
+        Name        Mandatory   Description
+        -------     ---------   -----------
+        COMPLEX     yes         Real, imaginary, weight
+        STOKES      yes         Stokes parameter
+        FREQ        yes         Frequency (spectral channel)
+        BAND        no          Band number
+        RA          yes         Right ascension of phase center
+        DEC         yes         Declination of phase center
+        -------     ---------   -----------
+        
+        
+        Numeric Codes for Stokes Parameters
+    
+        Code    Parameter
+        ----    ---------
+        1       I
+        2       Q
+        3       U
+        4       V
+        -1      RR
+        -2      LL
+        -3      RL
+        -4      LR
+        -5      XX
+        -6      YY
+        -7      XY
+        -8      YX
+        ----    ---------
+    
+        """
+
+        
+        h1("Opening uvfits data")
+        
+        self.fits     = pf.open(self.filename)
+        
+        # Match tables
+        for tbl in self.fits:
+            try:
+                if tbl.header['EXTNAME'] == 'ARRAY_GEOMETRY': 
+                    self.tbl_array_geometry = tbl
+                elif tbl.header['EXTNAME'] == 'FREQUENCY': 
+                    self.tbl_frequency = tbl
+                elif tbl.header['EXTNAME'] == 'ANTENNA': 
+                    self.tbl_antenna = tbl
+                elif tbl.header['EXTNAME'] == 'SOURCE': 
+                    self.tbl_source = tbl
+                elif tbl.header['EXTNAME'] == 'UV_DATA': 
+                    self.tbl_uv_data = tbl
+                else:
+                    print "Warning: %s not recognized"%tbl.header["EXTNAME"]
+            except KeyError:
+                pass
+                    
+        # Load basic metadata
+        # TODO: 
+        self.telescope  = self.tbl_uv_data.header['TELESCOP'].strip()
+        self.instrument = self.tbl_array_geometry.header['ARRNAM'].strip()
+        self.source     = str(self.tbl_source.data['SOURCE'][0]).lstrip("\"[\'").rstrip("\']\"")
+        self.date_obs   = self.tbl_uv_data.header['DATE-OBS'].strip()
+        self.n_ant      = self.tbl_antenna.data.shape[0]
+        
+        print self.fits.info()
+        print "Telescope:  %s"%self.telescope
+        print "Instrument: %s"%self.instrument
+        print "Object:     %s"%self.source
+        print "Date obs:   %s"%self.date_obs
+
+        # Load array geometry data
+        h2("Loading array geometry")
+        ag_keywords = ['ARRAYX','ARRAYY','ARRAYZ','RDATE','ARRNAM', 'FREQ']
+        ag_data     = ['ANNAME', 'STABXYZ', 'NOSTA', 'MNTSTA', 'STAXOF']
+        for k in ag_keywords: self.h_array_geometry[k] = self.tbl_array_geometry.header[k]
+        for k in ag_data:     self.d_array_geometry[k] = self.tbl_array_geometry.data[k]
+        
+        # Load antenna table data
+        h2("Loading antenna table")
+        an_keywords = ['NOPCAL']
+        an_data     = ['POLTYA','POLAA','POLCALA','POLTYB','POLAB','POLCALB']
+        for k in an_keywords: self.h_antenna[k] = self.tbl_antenna.header[k]
+        for k in an_data:     
+            try:
+                self.d_antenna[k] = self.tbl_antenna.data[k]
+            except KeyError:
+                print "\tWARNING: %s key error raised."%k
+        
+        # Load frequency table data
+        # This is the first of the non-straightforward conversions
+        h2("Loading frequency table")
+        frq_keywords = ['FREQID', 'BANDFREQ', 'CH_WIDTH','TOTAL_BANDWIDTH', 'SIDEBAND']
+        for k in frq_keywords:
+            try:
+                self.d_frequency[k] = self.tbl_frequency.data[k]
+            except KeyError:
+                print "\tWARNING: %s key error raised."%k
+
+        # Load source table data
+        h2("Loading source table")
+        src_keywords = ['SOURCE_ID', 'SOURCE', 'QUAL', 'CALCODE', 'FREQID', 'IFLUX',
+                    'QFLUX', 'UFLUX', 'VFLUX', 'ALPHA', 'FREQOFF', 'RAEPO', 'DECEPO',
+                    'EQUINOX', 'RAAPP', 'DECAPP','SYSVEL','VELTYP','VELDEF','RESTFREQ',
+                    'PMRA','PMDEC','PARALLAX']
+        for k in src_keywords:
+            try:
+                self.d_source[k] = self.tbl_source.data[k]
+            except KeyError:
+                print "\tWARNING: %s key error raised."%k
+
+        # Load common (mandatory) keywords
+        h2("Loading common keywords")
+        com_keywords = ['STK_1', 'NO_BAND', 'NO_STKD', 'REF_PIXL', 'REF_FREQ', 'CHAN_BW', 'NO_CHAN']
+        for k in com_keywords:
+            try:
+                self.h_common[k] = self.tbl_frequency.header[k]
+            except KeyError:
+                print "\tWARNING: %s key error raised."%k
+
+        # Load UV-DATA
+        h2("Loading UV-data")
+        uv_datacols = ['UU','VV','WW','BASELINE','DATE','FLUX','INTTIM','FREQID','SOURCE']
+        for k in uv_datacols: self.d_uv_data[k] = self.tbl_uv_data.data[k]
+        
+        # Find stokes axis type and values
+        ctypes = self.searchKeys('CTYPE\d', self.tbl_uv_data.header)
+        for ct in ctypes:
+            if self.tbl_uv_data.header[ct].strip() == 'STOKES':
+                stokes_axid = int(ct.lstrip('CTYPE'))
+                break
+        
+        #print self.tbl_uv_data.header
+        stokes_axis_len = int(self.tbl_uv_data.header['MAXIS%i'%stokes_axid])
+        stokes_code     = int(self.tbl_uv_data.header['CRVAL%i'%stokes_axid])
+        stokes_delt     = int(self.tbl_uv_data.header['CDELT%i'%stokes_axid])
+        stokes_vals  = range(stokes_code, stokes_code + stokes_delt* stokes_axis_len, stokes_delt)
+        self.stokes_vals = stokes_vals
+        self.stokes_axis = [self.stokes_codes[i] for i in stokes_vals]
+
+        num_rows = self.d_uv_data['FLUX'].shape[0]
     
     def readHdf5(self):
         """ TODO """
@@ -394,9 +564,9 @@ class InterFits(object):
         # Common headers - required for each table
         self.setXml("COMMON", "OBSCODE", self.obs_code)
         self.setXml("COMMON", "STK_1", self.stokes_vals[0])
-        self.setXml("COMMON", "REF_FREQ", self.d_frequency['REF_FREQ'])
-        self.setXml("COMMON", "CHAN_BW", self.d_frequency['CH_WIDTH'])   
-        self.setXml("COMMON", "REF_FREQ", self.d_frequency['REF_FREQ'])        
+        self.setXml("COMMON", "REF_FREQ", self.h_common['REF_FREQ'])
+        self.setXml("COMMON", "CHAN_BW", self.h_common['CH_WIDTH'])
+        self.setXml("COMMON", "REF_PIXL", self.h_common["REF_PIXL"])
         
         # Support tables
         self.setXml("PRIMARY", "CORRELAT", self.correlator)
@@ -409,12 +579,12 @@ class InterFits(object):
         
         # UV-DATA
         self.setXml("UV_DATA", "DATE-OBS", self.date_obs)
-        self.setXml("UV_DATA", "TELESCOP", self.telescope)
+        self.setXml("UV_DATA", "TELESCOP", self.h_uv_data['TELESCOP'])
         stokes_delt = self.stokes_vals[1] - self.stokes_vals[0]
         self.setXml("UV_DATA", "CDELT2", stokes_delt)
         self.setXml("UV_DATA", "CRVAL2", self.stokes_vals[0])
         self.setXml("UV_DATA", "CDELT3", self.d_frequency['CH_WIDTH'])
-        self.setXml("UV_DATA", "CRVAL3", self.d_frequency['REF_FREQ'])
+        self.setXml("UV_DATA", "CRVAL3", self.h_common['REF_FREQ'])
         
         if os.path.isfile(filename_out):
             os.remove(filename_out)
@@ -462,16 +632,13 @@ class InterFits(object):
         uvd = self.d_uv_data
         
         # TODO: Fix time and date to julian date
-        uvd['FREQID'] = np.ones(num_rows)
-        uvd['SOURCE'] = np.ones(num_rows)
-        uvd['INTTIM'] = np.ones(num_rows)
         
         tbl_uv_data = make_uv_data(config=config_xml, num_rows=num_rows, 
                 uu_data=uvd['UU'], vv_data=uvd['VV'], ww_data=uvd['WW'],
                 date_data=uvd['DATE'], time_data=None, baseline_data=uvd['BASELINE'].astype('int32'), 
                 source_data=uvd['SOURCE'], freqid_data=uvd['FREQID'], inttim_data=uvd['INTTIM'],
                 weights_data=None, flux_data=uvd['FLUX'], weights_col=False)
-                
+
         print tbl_uv_data.header.ascardlist()
         
         
@@ -524,6 +691,7 @@ class InterFits(object):
 
         h2("UV_DATA")
         print "Pre-filled"
+        # NOTE: This is now superfluous, thanks to the make_uv_data call above
         #for i in range(self.d_uv_data['DATA'].shape[0]):
         #    LinePrint("Row %i of %i"%(i+1, self.d_uv_data['DATA'].shape[0]))
         #    for k in ['UU','VV','WW','BASELINE','DATE']:
@@ -619,17 +787,159 @@ class InterFits(object):
         h1("Data verification")
         self.verify_baseline_order()
 
+    def leda_set_value(self, key, value):
+        """ Set values which are commonly incorrect from uvfits writer """
+
+        if key == 'ARRNAM':
+            self.h_array_geometry['ARRNAM'] = value
+        if key == 'INTTIM':
+            self.d_uv_data['INTTIM'][:] = value
+        if key == 'TELESCOP':
+            self.h_uv_data['TELESCOP'] = value
+            
+    def remove_miriad_baselines(self):
+        """ Remove baseline data for all antennas with IDs > 255
+
+        Miriad-type UVFITS files use the convention
+            ant1*256+ant2 if ants < 255
+            ant1*2048+ant2+65536 if ants >255
+        The miriad convention screws up import into many reduction packages.
+        """
+
+        bls    = self.d_uv_data["BASELINE"]
+        max_bl = 255*256 + 255
+        ok_bls = bls < max_bl
+        for k in self.d_uv_data.keys():
+            self.d_uv_data[k] = self.d_uv_data[k][ok_bls]
+            
+    def formatStokes(self):
+        """ Return data as complex stokes vector """
+        
+        data = self.d_uv_data["FLUX"]
+        
+        xx_data  = data[:,0::8] + 1j*data[:,1::8]
+        yy_data  = data[:,2::8] + 1j*data[:,3::8]
+        xy_data = data[:,4::8] + 1j*data[:,5::8]
+        yx_data = data[:,6::8] + 1j*data[:,7::8]
+        
+        return (xx_data, yy_data, xy_data, yx_data)
+
+def generateBlankFitsidi(config_xml, n_ant, num_rows, filename_out):
+        """ Generate blank FITS-IDI from XML file  """
+        
+        h1('Creating Primary HDU')
+        hdu_primary = make_primary(config=config_xml)
+        print hdu_primary.header.ascardlist()
+        
+        h1('\nCreating ARRAY_GEOMETRY')
+        tbl_array_geometry = make_array_geometry(config=config_xml, num_rows=n_ant)
+        print tbl_array_geometry.header.ascardlist()
+
+        h1('\nCreating ANTENNA')
+        tbl_antenna = make_antenna(config=config_xml, num_rows=self.n_ant)
+        print tbl_antenna.header.ascardlist()
+        
+        h1('\nCreating FREQUENCY')
+        tbl_frequency = make_frequency(config=config_xml, num_rows=1)
+        print tbl_frequency.header.ascardlist()
+        
+        h1('\nCreating SOURCE')
+        tbl_source = make_source(config=config_xml, num_rows=1)
+        print tbl_source.header.ascardlist()
+    
+        h1('\nCreating UV_DATA')
+                # TODO: Fix time and date to julian date
+        tbl_uv_data = make_uv_data(config=config_xml, num_rows=num_rows, weights_col=False)
+        print tbl_uv_data.header.ascardlist()
+        
+        h1('Creating HDU list')
+        hdulist = pf.HDUList(
+                    [hdu_primary, 
+                    tbl_array_geometry,
+                    tbl_frequency,
+                    tbl_antenna,
+                    tbl_source, 
+                    tbl_uv_data
+                    ])
+        print hdulist.info()
+        
+        print('\nVerifying integrity...')            
+        hdulist.verify()
+  
+        if(os.path.isfile(filename_out)):
+          print('Removing existing file %s...')%filename_out
+          os.remove(filename_out)
+        print('Writing to file %s...')%filename_out
+        hdulist.writeto(filename_out)
+
+def fillInFits(filename_in, filename_out, uv_pos):
+        """ Export data as FITS IDI 
+        
+        filename_out: str
+            output filename
+        config_xml: str
+            path to config file
+        
+        """
+        
+        f_in  = pf.open(filename_in)
+        f_out = pf.open(filename_out, mode='update')
+        
+
+        tbl_array_geometry_in  = f_in[1]
+        tbl_array_geometry_out = f_out[1]
+        tbl_antenna_in  = f_in[2]
+        tbl_antenna_out = f_out[2]
+        tbl_frequency_in  = f_in[3]
+        tbl_frequency_out = f_out[3]
+        tbl_source_in  = f_in[4]
+        tbl_source_out = f_out[4]
+        tbl_uv_data_in  = f_in[5]
+        tbl_uv_data_out = f_out[5]        
+        
+        h1('Filling in data')
+        h2("ARRAY_GEOMETRY")
+        for i in range(len(tbl_array_geometry_in)):
+            tbl_array_geometry_out.data[i] = tbl_array_geometry_in.data[i]
+        
+        h2("ANTENNA")
+        for i in range(len(tbl_antenna_in)):
+            tbl_antenna_out.data[i] = tbl_antenna_in.data[i]
+        
+        h2("FREQUENCY")
+        for i in range(len(tbl_frequency_in)):
+            tbl_frequency_out.data[i] = tbl_frequency_in.data[i]
+
+        h2("SOURCE")
+        for i in range(len(tbl_source_in)):
+            tbl_source_out.data[i] = tbl_source_out.data[i]
+        
+
+        h2("UV_DATA")
+        offset = uv_pos * 109
+        for i in range(tbl_uv_data_in['DATA'].shape[0]):
+            LinePrint("Row %i of %i"%(i+1, self.d_uv_data['DATA'].shape[0]))
+            tbl_uv_data_out.data['FLUX'][i] = tbl_uv_data_in.data['FLUX'][i]
+            for k in ['UU','VV','WW','BASELINE','DATE']:
+                try:
+                    tbl_uv_data_out.data[k][i]  = tbl_uv_data_in.data[k][i]
+                except:
+                    raise
+        
+        f_out.flush()
+        f_out.close()
+        f_in.close()
 
 if __name__ == '__main__':
     
     #filename = 'Test_0.uvfits'
-    filename = 'band1.uvfits'
+    filename = 'ledaovro7_one.fitsidi'
     uv = InterFits(filename)
-    
+
     #uv.generateFitsidiXml('config/leda64.xml', 'config/generated.xml')
     #uv.export_fitsidi('test2.fitsidi', 'config/generated.xml')
     
-    filename = '../data/band1_gpu6_data12_2013-06-16-04_53_15.dada_0.LA'
-    uv.readLfile(filename, flavor='OV64')
+    #filename = '../data/band1_gpu6_data12_2013-06-16-04_53_15.dada_0.LA'
+    #uv.readLfile(filename, flavor='OV64')
     
     #uv.verify()
