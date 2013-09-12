@@ -603,7 +603,10 @@ class InterFits(object):
         stokes_delt = self.stokes_vals[1] - self.stokes_vals[0]
         self.setXml("UV_DATA", "CDELT2", stokes_delt)
         self.setXml("UV_DATA", "CRVAL2", self.stokes_vals[0])
-        self.setXml("UV_DATA", "CDELT3", self.d_frequency['CH_WIDTH'])
+        if type(self.d_frequency['CH_WIDTH']) is np.ndarray:
+            self.setXml("UV_DATA", "CDELT3", self.d_frequency['CH_WIDTH'][0])
+        else:
+            self.setXml("UV_DATA", "CDELT3", self.d_frequency['CH_WIDTH'])
         self.setXml("UV_DATA", "CRVAL3", self.h_common['REF_FREQ'])
         
         if os.path.isfile(filename_out):

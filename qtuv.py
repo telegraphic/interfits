@@ -258,7 +258,7 @@ class InterFitsGui(QtGui.QWidget):
                         try:
                             ant1, ant2 = ax.get_title().split(" ")
                         except:
-                            ant1 = int(ax.get_title())  
+                            ant1 = int(ax.get_title().strip('Tile').strip('Antenna'))
                             ant2 = ant1                          
                         try:
                             self.spin_ref_ant.setValue(int(ant1))
