@@ -23,20 +23,24 @@ class LinePrint():
     """
     Print things to stdout on one line dynamically
     """
-    def __init__(self,data):
-        sys.stdout.write("\r\x1b[K"+data.__str__())
+    def __init__(self, data):
+        sys.stdout.write("\r\x1b[K" + data.__str__())
         sys.stdout.flush()
+
 
 def h1(headstr):
     """ Print a string as a header """
     print '\n', headstr
     underline = ''
-    for i in range(len(headstr)): underline += '-'
+    for i in range(len(headstr)):
+        underline += '-'
     print underline
+
 
 def h2(headstr):
     """ Print a string as a header """
     print '\n###  ', headstr
+
 
 class VerificationError(Exception):
     """ Custom data verification exception """
@@ -54,8 +58,7 @@ class InterFits(object):
         self.source     = ""
         self.date_obs   = ""
         self.obs_code   = ""
-        
-        
+
         # Set up dictionaries to store data
         self.h_antenna = {}
         self.h_array_geometry = {}
@@ -301,7 +304,7 @@ class InterFits(object):
         self.d_uv_data['FREQID'] = np.ones(num_rows)
         self.d_uv_data['SOURCE'] = np.ones(num_rows)
     
-    def readFitsidi(self):
+    def readFitsidi(self, from_file=True, load_uv_data=True):
         """ Open and read the contents of a FITS-IDI file 
         
         Notes
@@ -342,9 +345,12 @@ class InterFits(object):
         """
 
         h1("Opening uvfits data")
-        
-        self.fits     = pf.open(self.filename)
-        
+
+        if from_file:
+            self.fits     = pf.open(self.filename)
+        else:
+            pass # Assumes that self.fits is already populated
+
         # Match tables
         for tbl in self.fits:
             try:
@@ -364,11 +370,16 @@ class InterFits(object):
                 pass
                     
         # Load basic metadata
-        # TODO: 
-        self.telescope  = self.tbl_uv_data.header['TELESCOP'].strip()
+        if load_uv_data:
+            self.telescope  = self.tbl_uv_data.header['TELESCOP'].strip()
+            try:
+                self.date_obs   = self.tbl_uv_data.header['DATE-OBS'].strip()
+            except AttributeError:
+                self.date_obs = '2013'
+        else:
+            self.telescope, self.date_obs = '', 0.0
         self.instrument = self.tbl_array_geometry.header['ARRNAM'].strip()
         self.source     = str(self.tbl_source.data['SOURCE'][0]).lstrip("\"[\'").rstrip("\']\"")
-        self.date_obs   = self.tbl_uv_data.header['DATE-OBS'].strip()
         self.n_ant      = self.tbl_antenna.data.shape[0]
         
         print self.fits.info()
@@ -434,119 +445,238 @@ class InterFits(object):
 
 
         # Load UV-DATA
-        h2("Loading UV-data")
-        uv_keywords = ['TELESCOP']
-        for k in uv_keywords:
-            try:
-                self.h_uv_data[k] = self.tbl_uv_data.header[k]
-            except KeyError:
-                print "\tWARNING: %s key error raised."%k
+        if load_uv_data:
+            h2("Loading UV-data")
+            uv_keywords = ['TELESCOP']
+            for k in uv_keywords:
+                try:
+                    self.h_uv_data[k] = self.tbl_uv_data.header[k]
+                except KeyError:
+                    print "\tWARNING: %s key error raised."%k
 
-        uv_datacols = ['UU','VV','WW','BASELINE','DATE','FLUX','INTTIM','FREQID','SOURCE']
-        for k in uv_datacols: self.d_uv_data[k] = self.tbl_uv_data.data[k]
-        
-        # Find stokes axis type and values
-        ctypes = self.searchKeys('CTYPE\d', self.tbl_uv_data.header)
-        for ct in ctypes:
-            if self.tbl_uv_data.header[ct].strip() == 'STOKES':
-                stokes_axid = int(ct.lstrip('CTYPE'))
-                break
-        
-        stokes_axis_len = int(self.tbl_uv_data.header['MAXIS%i'%stokes_axid])
-        stokes_code     = int(self.tbl_uv_data.header['CRVAL%i'%stokes_axid])
-        stokes_delt     = int(self.tbl_uv_data.header['CDELT%i'%stokes_axid])
-        stokes_vals  = range(stokes_code, stokes_code + stokes_delt* stokes_axis_len, stokes_delt)
-        self.stokes_vals = stokes_vals
-        self.stokes_axis = [self.stokes_codes[i] for i in stokes_vals]
+            uv_datacols = ['UU','VV','WW','BASELINE','DATE','FLUX','INTTIM','FREQID','SOURCE']
+            for k in uv_datacols: self.d_uv_data[k] = self.tbl_uv_data.data[k]
 
+            # Find stokes axis type and values
+            ctypes = self.searchKeys('CTYPE\d', self.tbl_uv_data.header)
+            for ct in ctypes:
+                if self.tbl_uv_data.header[ct].strip() == 'STOKES':
+                    stokes_axid = int(ct.lstrip('CTYPE'))
+                    break
 
+            stokes_axis_len = int(self.tbl_uv_data.header['MAXIS%i'%stokes_axid])
+            stokes_code     = int(self.tbl_uv_data.header['CRVAL%i'%stokes_axid])
+            stokes_delt     = int(self.tbl_uv_data.header['CDELT%i'%stokes_axid])
+            stokes_vals  = range(stokes_code, stokes_code + stokes_delt* stokes_axis_len, stokes_delt)
+            self.stokes_vals = stokes_vals
+            self.stokes_axis = [self.stokes_codes[i] for i in stokes_vals]
     
     def readHdf5(self):
         """ TODO """
         pass
         
-    def readLfile(self, filename, flavor='OV64'):
+    def readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4):
         """ Read a LEDA L-file 
         
         filename: str
             name of L-file
-        flavor: str
-            What version / type of L-file is this? Defaults to
-            'OV64' for Owen's Valley LEDA64.
-        
+        n_ant: int
+            Number of antennas. Defaults to 256
+        n_pol: int
+            Number of polarizations. Defaults to 2 (dual-pol)
+        n_chans: int
+            Number of channels in file. Defaults to 109 (LEDA-512 default)
+        n_stk: int
+            Number of stokes parameters in file. Defaults to 4
+
         Notes
         -----
+
+        .LA and .LC are binary data streams.
+
         .LA files store autocorrelations in the following way:
-        
-        t0 |Ant1 600 chans XX | Ant1 600 chans YY| Ant2 ... | AntN ...
-        t1 |Ant1 600 chans XX | Ant1 600 chans YY| Ant2 ... | AntN ...
-        
+        t0 |Ant1 109 chans XX | Ant1 109 chans YY| Ant2 ... | AntN ...
+        t1 |Ant1 109 chans XX | Ant1 109 chans YY| Ant2 ... | AntN ...
+        These are REAL VALUED (1x float)
+
         .LC files store ant1 XY and are upper triangular, so
         1x1y| 1x2x | 1x2y | ... | 1x32y | 
               2x2y | 2x3x | ... |  ...  |
                      3x3y | ... |  ...  |
+        These are COMPLEX VALUED (2xfloats)
+
         """
         h1("Opening L-file")
-        if flavor == 'OV64':
-            n_chans = 600
-            n_ant    = 32
-            n_pol    = 2
-            n_antpol = n_ant*n_pol
-            n_stk    = 4
-            n_blcc   = n_antpol * (n_antpol - 1) / 2 
 
-            filename = filename.rstrip('.LA').rstrip('.LC')
-        
-            # Autocorrs
-            # Axes are time, ra, dec, band, freq, stokes, re, im
-            h2("Opening autocorrs (.LA)")
-            lfa = np.fromfile(filename+'.LA', dtype='float32')
-            lfa = lfa.reshape([len(lfa)/n_chans/n_antpol, n_antpol, n_chans,1])
-            lfa = np.concatenate((lfa, np.zeros_like(lfa)),axis=3)
-            print lfa.shape
-            
-            # Cross-corrs
-            h2("Opening cross-corrs (.LA)")
-            lfc = np.fromfile(filename+'.LC', dtype='float32')
-            lfc = lfc.reshape([len(lfc)/n_chans/n_blcc/2, n_blcc, n_chans, 2])
-            print lfc.shape
-            
-            h2("Forming visibility matrix")
-            # Create a visibility matrix, and use indexing to populate upper triangle
-            vis = np.zeros([lfa.shape[0],64,64,600,2])
-            iup = np.triu_indices(64,1)
-            idiag = (np.arange(0,64), np.arange(0,64))
-            
-            for i in range(0, vis.shape[0]):
-                LinePrint("%i of %i"%(i, vis.shape[0]))
-                vis[i][iup]   = lfc[i]
-                vis[i][idiag] = lfa[i]
-            print "\n", vis.shape
-            
-            uv = vis[0]
-            
-            h2("Converting to data interchange standard")
-            bl_lower, bl_upper = [], []
-            for i in range(1, n_ant+1):
-                for j in range(1, n_ant+1):
-                    if j >= i: bl_lower.append(256*i + j)
-                    elif j <= i: bl_upper.append(256*j + i)
+        n_antpol = n_ant*n_pol
+        n_blcc   = n_antpol * (n_antpol - 1) / 2
+
+        filename = self.filename.rstrip('.LA').rstrip('.LC')
+        config_xml = filename + '.xml'
+
+        try:
+            self.xmlData = etree.parse(config_xml)
+        except IOError:
+            print "ERROR: Cannot open %s"%config_xml
+            exit()
+
+        # Autocorrs
+        # Axes are time, ra, dec, band, freq, stokes, re, im
+        h2("Opening autocorrs (.LA)")
+        lfa = np.fromfile(filename+'.LA', dtype='float32')
+        lfa = lfa.reshape([len(lfa)/n_chans/n_antpol, n_antpol, n_chans, 1])
+        lfa = np.concatenate((lfa, np.zeros_like(lfa)),axis=3)
+        print lfa.shape
+
+        # Cross-corrs
+        h2("Opening cross-corrs (.LC)")
+        lfc = np.fromfile(filename+'.LC', dtype='float32')
+        lfc = lfc.reshape([len(lfc)/n_chans/n_blcc/2, n_blcc, n_chans, 2])
+        print lfc.shape
+
+        h2("Forming visibility matrix")
+        # Create a visibility matrix, and use indexing to populate upper triangle
+        vis = np.zeros([lfa.shape[0],n_antpol,n_antpol,n_chans,2])
+        iup = np.triu_indices(n_antpol,1)
+        idiag = (np.arange(0,n_antpol), np.arange(0,n_antpol))
+
+        for i in range(0, vis.shape[0]):
+             LinePrint("%i of %i"%(i, vis.shape[0]))
+             vis[i][iup]   = lfc[i]
+             vis[i][idiag] = lfa[i]
+        print "\n", vis.shape
+
+        h2("Generating baseline IDs")
+        # Create baseline IDs using MIRIAD >255 antenna format (which sucks)
+        bl_lower, bl_upper = [], []
+        for ii in range(1, n_ant+1):
+            for jj in range(1, n_ant+1):
+                if jj >= ii:
+                    if ii > 255 or jj > 255:
+                        bl_id = ii * 2048 + jj + 65536
+                    else:
+                        bl_id = 256 * ii + jj
+                    bl_lower.append(bl_id)
+                #elif j <= i: bl_upper.append(256*j + i)
+
+        h2("Filling FLUX column")
+        flux = np.zeros([len(bl_lower), n_chans*n_stk*2])
+        for ii in range(len(bl_lower)):
+            bl_id = bl_lower[ii]
+            if bl_id > 65536:
+                ant1 = (bl_id - 65536) / 2048
+                ant2 = (bl_id - 65536) % 2048
+            else:
+                ant1 = bl_id / 256
+                ant2 = bl_id % 256
+
+            xx = vis[0, 2 * (ant1-1), 2 * (ant2-1)]
+            yy = vis[0, 2 * (ant1-1)+1, 2 * (ant2-1)+1]
+            xy = vis[0, 2 * (ant1-1), 2 * (ant2-1)+1]
+            yx = vis[0, 2 * (ant1-1)+1, 2 * (ant2-1)]
+
+            flux[ii] = np.column_stack((xx, yy, xy, yx)).flatten()
 
 
-            #lfa = lfa.reshape([n_time, 1,1,1, n_pol, n_chans])
-            #lfa = lfa.swapaxes(4, 5)
-            #lfa = lfa.reshape([n_time, 1,1,1, n_chans, n_pol,1])
-            #
-            ## Need to add imaginary axis and other stokes
-            #lfa_i = np.zeros_like(lfa)
-            #lfa = np.concatenate((lfa, lfa_i), axis=6)
-            #lfa_s = np.zeros_like(lfa)
-            #lfa = np.concatenate((lfa, lfa_s), axis=5)
-            #print lfa.shape
+        #h2("Converting uv_data to interfits convention")
+        ## Create baseline IDs
+        #bl_lower, bl_upper = [], []
+        #for i in range(1, n_ant+1):
+        #    for j in range(1, n_ant+1):
+        #        if j >= i:
+        #            bl_lower.append(256*i + j)
+        #        #elif j <= i: bl_upper.append(256*j + i)
+        #bl_lower = np.array(bl_lower, dtype='int')
+        #bl1, bl2 = bl_lower / 256, bl_lower % 256
 
-            
-        else:
-            raise Exception("Unknown flavor: %s"%flavor)
+        # Now grab each baseline and flatten into column
+        # TODO: Loop over visibility
+        #flux = np.zeros([len(bl_lower), vis.shape[-2]*vis.shape[-1]*n_stk])
+        #for ii in range(len(bl_lower)):
+        #    try:
+        #        ant1, ant2 = bl1[ii], bl2[ii]
+        #        if ant1 == 257:
+        #            ant1, ant2 = 0, 0
+        #
+        #        xx_flux = vis[0, 2*(ant1-1), 2*(ant2-1)].flatten()
+        #        yy_flux = vis[0, 2*(ant1-1)+1, 2*(ant2-1)+1].flatten()
+        #        xy_flux = -1*vis[0, 2*(ant1-1), 2*(ant2-1)+1].flatten()
+        #        yx_flux = vis[0, 2*(ant1-1)+1, 2*(ant2-1)].flatten()
+        #
+        #        #print xx_flux.shape
+        #        #print np.column_stack((xx_flux, yy_flux, xy_flux, yx_flux)).shape
+        #
+        #        flux[ii] = np.row_stack((xx_flux, yy_flux, xy_flux, yx_flux)).flatten()
+        #
+        #    except IndexError:
+        #        print ii, ant1, ant2, 2*(ant1-1), 2*(ant2-1)
+        #        raise
+
+        # Create interfits dictionary entries
+        zero_vec = np.zeros_like(bl_lower).astype('float32')
+        ones_vec = np.ones_like(bl_lower).astype('float32')
+        self.d_uv_data["BASELINE"] = bl_lower
+        self.d_uv_data["FLUX"]     = flux
+        self.d_uv_data["DATE"]     = zero_vec
+        self.d_uv_data["UU"]       = zero_vec
+        self.d_uv_data["VV"]       = zero_vec
+        self.d_uv_data["WW"]       = zero_vec
+        self.d_uv_data["FREQID"]   = ones_vec
+        self.d_uv_data["INTTIM"]   = ones_vec
+        self.d_uv_data["SOURCE"]   = ones_vec
+
+
+        h1("Generating FITS-IDI schema from XML")
+        h2('Creating Primary HDU')
+        hdu_primary = make_primary(config=config_xml)
+
+        h2('\nCreating ARRAY_GEOMETRY')
+        tbl_array_geometry = make_array_geometry(config=config_xml, num_rows=n_ant)
+
+        h2('\nCreating ANTENNA')
+        tbl_antenna = make_antenna(config=config_xml, num_rows=n_ant)
+
+        h2('\nCreating FREQUENCY')
+        tbl_frequency = make_frequency(config=config_xml, num_rows=1)
+
+        h2('\nCreating SOURCE')
+        tbl_source = make_source(config=config_xml, num_rows=1)
+
+        # Skipping as we have created this from LA LC files
+        #h1('\nCreating UV_DATA')
+        #    num_rows = self.d_uv_data['FLUX'].shape[0]
+        #    uvd = self.d_uv_data
+        #
+        #    tbl_uv_data = make_uv_data(config=config_xml, num_rows=num_rows,
+        #            uu_data=uvd['UU'], vv_data=uvd['VV'], ww_data=uvd['WW'],
+        #            date_data=uvd['DATE'], time_data=None, baseline_data=uvd['BASELINE'].astype('int32'),
+        #            source_data=uvd['SOURCE'], freqid_data=uvd['FREQID'], inttim_data=uvd['INTTIM'],
+        #            weights_data=None, flux_data=uvd['FLUX'], weights_col=False)
+
+        #h1('Creating HDU list')
+        hdulist = pf.HDUList(
+                    [hdu_primary,
+                    tbl_array_geometry,
+                    tbl_frequency,
+                    tbl_antenna,
+                    tbl_source
+                    ])
+        #print hdulist.info()
+        #print('\nVerifying integrity...')
+        #hdulist.verify()
+
+        # We are now ready to back-fill Interfits dictionaries using readfitsidi
+        self.fits = hdulist
+        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+        self.stokes_vals = [-5,-6,-7,-8]
+        self.readFitsidi(from_file=False, load_uv_data=False)
+
+        # For testing only
+        #assert self.d_uv_data == uvd
+
+
+
+
 
     def setXml(self, table, keyword, value):
         """ Find a header parameter and replace it """
@@ -599,7 +729,7 @@ class InterFits(object):
         
         # UV-DATA
         self.setXml("UV_DATA", "DATE-OBS", self.date_obs)
-        self.setXml("UV_DATA", "TELESCOP", self.h_uv_data['TELESCOP'])
+        self.setXml("UV_DATA", "TELESCOP", self.telescope)
         stokes_delt = self.stokes_vals[1] - self.stokes_vals[0]
         self.setXml("UV_DATA", "CDELT2", stokes_delt)
         self.setXml("UV_DATA", "CRVAL2", self.stokes_vals[0])

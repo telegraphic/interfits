@@ -1,5 +1,7 @@
 *.uvfits
 *.fitsidi
+*.LA
+*.LC
 *.pyc
 old/
 .idea/
