@@ -36,7 +36,7 @@ def test_compare_lalc():
     print "Testing flux data..."
     for row in range(0, lalc_flux.shape[0]):
         if not row % 1000:
-            print "%i of %i"%(row, lalc_flux.shape[0])
+            print "\t %i of %i"%(row, lalc_flux.shape[0])
         try:
             xxl = lalc_flux[row][::8]**2 + lalc_flux[row][1::8]**2
             yyl = lalc_flux[row][2::8]**2 + lalc_flux[row][3::8]**2
