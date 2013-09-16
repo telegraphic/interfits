@@ -4,20 +4,23 @@
 interfits.py
 ============
 
-reads a uvfits file and loads it into InterFits class
+Python class which reads a variety of different visibility formats, particularly those
+used by the LEDA instrument. Currently reads UV-FITS, FITS-IDI, DADA and L-FILE formats.
+
+TODO: Add support for Measurement Sets.
 
 """
 
 import sys
 import os
 import re
-import datetime
 
 import pyfits as pf
 import numpy as np
 from lxml import etree
 
 from lib.pyFitsidi import *
+from lib import dada
 
 
 class LinePrint():
@@ -37,7 +40,6 @@ def h1(headstr):
     for i in range(len(headstr)):
         underline += '-'
     print underline
-
 
 def h2(headstr):
     """ Print a string as a header """
@@ -113,6 +115,10 @@ class InterFits(object):
             match = re.search(regex, filename)
             if match: self.readFile('lfile')
 
+            regex = '([0-9A-Za-z-_]+).dada'
+            match = re.search(regex, filename)
+            if match: self.readFile('dada')
+
     def __repr__(self):
         to_print = ""
         to_print += "Telescope:  %s\n" % self.telescope
@@ -127,7 +133,8 @@ class InterFits(object):
             'uvfits': self.readUvfits,
             'fitsidi': self.readFitsidi,
             'hdf5': self.readHdf5,
-            'lfile': self.readLfile
+            'lfile': self.readLfile,
+            'dada': self.readDada
         }.get(filetype)()
 
     def searchKeys(self, pattern, header):
@@ -484,6 +491,44 @@ class InterFits(object):
         """ TODO """
         raise Exception("HDF5 support not yet implemented.")
 
+    def _readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4):
+        """ Main L-File reading subroutine.
+        Opens L-files and forms a visibility matrix.
+        See readLfile for main routine """
+
+        n_antpol = n_ant * n_pol
+        n_blcc = n_antpol * (n_antpol - 1) / 2
+
+        filename = self.filename.rstrip('.LA').rstrip('.LC')
+
+        # Autocorrs
+        #h2("Opening autocorrs (.LA)")
+        lfa = np.fromfile(filename + '.LA', dtype='float32')
+        lfa = lfa.reshape([len(lfa) / n_chans / n_antpol, n_antpol, n_chans, 1])
+        lfa = np.concatenate((lfa, np.zeros_like(lfa)), axis=3)
+        print lfa.shape
+
+        # Cross-corrs
+        #h2("Opening cross-corrs (.LC)")
+        lfc = np.fromfile(filename + '.LC', dtype='float32')
+        lfc = lfc.reshape([len(lfc) / n_chans / n_blcc / 2, n_blcc, n_chans, 2])
+        print lfc.shape
+
+        #h2("Forming visibility matrix")
+        # Create a visibility matrix, and use indexing to populate upper triangle
+        n_dumps = lfa.shape[0]
+        vis = np.zeros([n_dumps, n_antpol, n_antpol, n_chans, 2])
+        iup = np.triu_indices(n_antpol, 1)
+        idiag = (np.arange(0, n_antpol), np.arange(0, n_antpol))
+
+        for ii in range(0, vis.shape[0]):
+            LinePrint("%i of %i" % (ii, vis.shape[0]))
+            vis[ii][iup] = lfc[ii]
+            vis[ii][idiag] = lfa[ii]
+        print "\n", vis.shape
+
+        return vis
+
     def readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4):
         """ Read a LEDA L-file 
         
@@ -515,50 +560,19 @@ class InterFits(object):
         These are COMPLEX VALUED (2xfloats)
 
         """
-        debug = True
+
         h1("Opening L-file")
-
-        n_antpol = n_ant * n_pol
-        n_blcc = n_antpol * (n_antpol - 1) / 2
-
         filename = self.filename.rstrip('.LA').rstrip('.LC')
         config_xml = filename + '.xml'
-
         try:
             self.xmlData = etree.parse(config_xml)
         except IOError:
             print "ERROR: Cannot open %s" % config_xml
             exit()
 
-        # Autocorrs
-        h2("Opening autocorrs (.LA)")
-        lfa = np.fromfile(filename + '.LA', dtype='float32')
-        lfa = lfa.reshape([len(lfa) / n_chans / n_antpol, n_antpol, n_chans, 1])
-        lfa = np.concatenate((lfa, np.zeros_like(lfa)), axis=3)
-        print lfa.shape
-
-        # Cross-corrs
-        h2("Opening cross-corrs (.LC)")
-        lfc = np.fromfile(filename + '.LC', dtype='float32')
-        lfc = lfc.reshape([len(lfc) / n_chans / n_blcc / 2, n_blcc, n_chans, 2])
-        print lfc.shape
-
-        t1 = datetime.datetime.now()
-        h2("Forming visibility matrix")
-        # Create a visibility matrix, and use indexing to populate upper triangle
-        n_dumps = lfa.shape[0]
-        vis = np.zeros([n_dumps, n_antpol, n_antpol, n_chans, 2])
-        iup = np.triu_indices(n_antpol, 1)
-        idiag = (np.arange(0, n_antpol), np.arange(0, n_antpol))
-
-        for ii in range(0, vis.shape[0]):
-            LinePrint("%i of %i" % (ii, vis.shape[0]))
-            vis[ii][iup] = lfc[ii]
-            vis[ii][idiag] = lfa[ii]
-        print "\n", vis.shape
-        if debug:
-            t2 = datetime.datetime.now()
-            print t2 - t1
+        # Load visibility data
+        h2("Loading visibility data")
+        vis = self._readLfile()
 
         h2("Generating baseline IDs")
         # Create baseline IDs using MIRIAD >255 antenna format (which sucks)
@@ -573,13 +587,11 @@ class InterFits(object):
                         bl_id = 256 * ii + jj
                     bls.append(bl_id)
         bl_lower = []
-        for dd in range(n_dumps):
-            bl_lower += bls
-        if debug:
-            t3 = datetime.datetime.now()
-            print t3 - t2
 
-        h2("Filling FLUX column")
+        for dd in range(vis.shape[0]):
+            bl_lower += bls
+
+        h2("Converting visibilities to FLUX columns")
         flux = np.zeros([len(bl_lower), n_chans * n_stk * 2])
         for ii in range(len(bl_lower)):
             ant1, ant2 = ant_arr[ii]
@@ -589,9 +601,6 @@ class InterFits(object):
             xy = vis[0, idx1, idx2 + 1]
             yx = vis[0, idx1 + 1, idx2]
             flux[ii] = np.column_stack((xx, yy, xy, yx)).flatten()
-        if debug:
-            t4 = datetime.datetime.now()
-            print t4 - t3
 
         h2("Populating interfits dictionaries")
         # Create interfits dictionary entries
@@ -606,10 +615,6 @@ class InterFits(object):
         self.d_uv_data["FREQID"] = ones_vec
         self.d_uv_data["INTTIM"] = ones_vec
         self.d_uv_data["SOURCE"] = ones_vec
-        if debug:
-            t5 = datetime.datetime.now()
-            print t5 - t4
-            print t5 - t1
 
         h1("Generating FITS-IDI schema from XML")
         hdu_primary = make_primary(config=config_xml)
@@ -617,17 +622,6 @@ class InterFits(object):
         tbl_antenna = make_antenna(config=config_xml, num_rows=n_ant)
         tbl_frequency = make_frequency(config=config_xml, num_rows=1)
         tbl_source = make_source(config=config_xml, num_rows=1)
-
-        # Skipping as we have created this from LA LC files
-        #h1('\nCreating UV_DATA')
-        #    num_rows = self.d_uv_data['FLUX'].shape[0]
-        #    uvd = self.d_uv_data
-        #
-        #    tbl_uv_data = make_uv_data(config=config_xml, num_rows=num_rows,
-        #            uu_data=uvd['UU'], vv_data=uvd['VV'], ww_data=uvd['WW'],
-        #            date_data=uvd['DATE'], time_data=None, baseline_data=uvd['BASELINE'].astype('int32'),
-        #            source_data=uvd['SOURCE'], freqid_data=uvd['FREQID'], inttim_data=uvd['INTTIM'],
-        #            weights_data=None, flux_data=uvd['FLUX'], weights_col=False)
 
         #h1('Creating HDU list')
         hdulist = pf.HDUList(
@@ -638,7 +632,6 @@ class InterFits(object):
              tbl_source
             ])
         #print hdulist.info()
-        #print('\nVerifying integrity...')
         #hdulist.verify()
 
         # We are now ready to back-fill Interfits dictionaries using readfitsidi
@@ -646,13 +639,22 @@ class InterFits(object):
         self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
         self.stokes_vals = [-5, -6, -7, -8]
         self.readFitsidi(from_file=False, load_uv_data=False)
-
         # For testing only
         #assert self.d_uv_data == uvd
 
+
+    def readDada(self):
+        """ Read a LEDA DADA file
+        """
+
+        d = dada.DadaSubBand(self.filename)
+        vis = d.data
+
+        print vis.shape
+
+
     def setXml(self, table, keyword, value):
         """ Find a header parameter and replace it """
-
         try:
             self.xmlroot = self.xmlData.getroot()
             if type(value) == str:
@@ -671,7 +673,6 @@ class InterFits(object):
         filename_out: str
             name of output file
         """
-
         self.xmlData = etree.parse(xmlbase)
 
         # Look in the config file or fits-idi convention for

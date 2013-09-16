@@ -2,6 +2,7 @@
 *.fitsidi
 *.LA
 *.LC
+*.dada
 *.pyc
 old/
 .idea/
