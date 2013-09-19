@@ -28,7 +28,7 @@ def compare_dicts(dict_a, dict_b):
                     assert dict_a[k] == dict_b[k]
             except:
                 if k not in ok_exceptions:
-                    print "Error:", k, dict_a[k], dict_b[k]
+                    print "Error:", k, dict_a[k][:16], dict_b[k][:16]
                     print type(dict_a[k])
                     all_ok = False
                 else:

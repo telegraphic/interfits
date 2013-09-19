@@ -7,7 +7,7 @@ def test_generate_fitsidi():
     filename_uvf  = 'test_lalc.uvfits'
     filename_idi = filename_uvf.rstrip('.uvfits')+'.fitsidi'
     uvf = InterFits(filename_uvf)
-    uvf.export_fitsidi(filename_idi, 'test_config.xml')
+    uvf.exportFitsidi(filename_idi, 'test_config.xml')
 
 def test_compare_uv2idi():
     """ Compare a uvfits file to a fits-idi file to confirm they are equivalent """
@@ -53,7 +53,7 @@ def test_compare_idi_generated():
     """ Check that creating a fits-idi->interfits->fits-idi creates identical data. """
 
     idi = InterFits('test_lalc.fitsidi')
-    idi.export_fitsidi('test_lalc2.fitsidi', 'test_config.xml')
+    idi.exportFitsidi('test_lalc2.fitsidi', 'test_config.xml')
     idi2 = InterFits('test_lalc2.fitsidi')
 
 

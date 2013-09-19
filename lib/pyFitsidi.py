@@ -47,9 +47,30 @@ Module listing
 import sys, os
 import pyfits as pf, numpy as np
 from lxml import etree
+import lxml
+
+
+def checkConfigType(config):
+    """ Helper function to check config parameter type
+
+    Notes
+    -----
+    Checks whether configuration is being passed as an lxml element tree,
+    or as a filename.
+    """
+
+    if type(config) is lxml.etree._ElementTree:
+        return config
+    if type(config) is str:
+        return etree.parse(config)
+    if type(config) is unicode:
+        return etree.parse(config)
+    else:
+        print type(config)
+        raise
 
 def parseConfig(tagname, config='config.xml'):
-  """ Finds tagname, in elementTree x, parses and returns dictionary of values
+    """ Finds tagname, in elementTree x, parses and returns dictionary of values
   This is a helper function, and is not usually called directly.
   
   Notes
@@ -57,20 +78,21 @@ def parseConfig(tagname, config='config.xml'):
   This function uses eval() to evaluate the text string inside a child tag. As such,
   exercise caution! todo: block off certain modules to eval()
   """
-  
-  xmlData = etree.parse(config) 
-  x = xmlData.getroot()
-  T = True # FITS just uses T for True, python (and pyFITS) uses True
-  
-  # As we reference 'parameters', we need to search for this first
-  params = dict([ (child.tag, eval(child.text.strip())) for child in x.find('PARAMETERS').getchildren()])
-  
-  # This line makes me very happy, but will probably infuriate others:
-  vals = dict([ (child.tag, eval(child.text.strip())) for child in x.find(tagname).getchildren()])
-  return vals
+
+    xmlData = checkConfigType(config)
+    x = xmlData.getroot()
+    T = True # FITS just uses T for True, python (and pyFITS) uses True
+
+    # As we reference 'parameters', we need to search for this first
+    params = dict([(child.tag, eval(child.text.strip())) for child in x.find('PARAMETERS').getchildren()])
+
+    # This line makes me very happy, but will probably infuriate others:
+    vals = dict([(child.tag, eval(child.text.strip())) for child in x.find(tagname).getchildren()])
+    return vals
+
 
 def make_primary(config='config.xml'):
-  """  Creates the primary header data unit (HDU). 
+    """  Creates the primary header data unit (HDU).
   
   This function generates header keywords from the file headers/primary.tpl
   
@@ -79,25 +101,25 @@ def make_primary(config='config.xml'):
   config: string
     filename of xml configuration file, defaults to 'config,xml'
   """
-  
-  # Make a new blank FITS HDU
-  hdu = pf.PrimaryHDU()
-  
-  # Generate headers from config file
-  params  = parseConfig('PARAMETERS', config)
-  primary = parseConfig('PRIMARY', config)
-  common  = parseConfig('COMMON', config)
-  
 
-  for key in primary: hdu.header.update(key, primary[key])
-  #for key in common: hdu.header.update(key, common[key])
-  
-  hdu.verify() # Will raise a warning if there's an issue  
-  
-  return hdu
+    # Make a new blank FITS HDU
+    hdu = pf.PrimaryHDU()
+
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    primary = parseConfig('PRIMARY', config)
+    common = parseConfig('COMMON', config)
+
+    for key in primary: hdu.header.update(key, primary[key])
+    #for key in common: hdu.header.update(key, common[key])
+
+    hdu.verify() # Will raise a warning if there's an issue
+
+    return hdu
+
 
 def make_array_geometry(config='config.xml', num_rows=1):
-  """Creates a vanilla ARRAY_GEOMETRY table HDU. 
+    """Creates a vanilla ARRAY_GEOMETRY table HDU.
   
   One row is required for each antenna in the array (num_rows)
 
@@ -122,52 +144,51 @@ def make_array_geometry(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  array_geometry = parseConfig('ARRAY_GEOMETRY', config)
-  common  = parseConfig('COMMON', config)
-  
-  # Generate the columns for the table header
-  c = []
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    array_geometry = parseConfig('ARRAY_GEOMETRY', config)
+    common = parseConfig('COMMON', config)
 
-  c.append(pf.Column(name='ANNAME',  format='8A',\
-    array=np.zeros(num_rows,dtype='a8')))   
-  
-  c.append(pf.Column(name='STABXYZ', format='3D', \
-    unit='METERS',array=np.zeros(num_rows,dtype='3float64')))
-  
-  c.append(pf.Column(name='DERXYZ',  format='3E', \
-    unit='METERS/SEC', array=np.zeros(num_rows,dtype='3float32')))
-  
-  orb_format = '%iD'%params['NORB']
-  orb_dtype  = '%ifloat64'%params['NORB']
-  c.append(pf.Column(name='ORBPARM', format=orb_format,\
-    array=np.zeros(num_rows,dtype=orb_dtype)))
-  
-  c.append(pf.Column(name='NOSTA',   format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='MNTSTA',  format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='STAXOF',  format='3E', \
-    unit='METERS', array=np.zeros(num_rows,dtype='3float32')))
+    # Generate the columns for the table header
+    c = []
 
-  c.append(pf.Column(name='DIAMETER',  format='1E', \
-    unit='METERS', array=np.zeros(num_rows,dtype='float32')))
+    c.append(pf.Column(name='ANNAME', format='8A',
+                       array=np.zeros(num_rows, dtype='a8')))
 
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c.append(pf.Column(name='STABXYZ', format='3D',
+                       unit='METERS', array=np.zeros(num_rows, dtype='3float64')))
+
+    c.append(pf.Column(name='DERXYZ', format='3E',
+                       unit='METERS/SEC', array=np.zeros(num_rows, dtype='3float32')))
+
+    orb_format = '%iD' % params['NORB']
+    orb_dtype = '%ifloat64' % params['NORB']
+    c.append(pf.Column(name='ORBPARM', format=orb_format,
+                       array=np.zeros(num_rows, dtype=orb_dtype)))
+
+    c.append(pf.Column(name='NOSTA', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='MNTSTA', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='STAXOF', format='3E',
+                       unit='METERS', array=np.zeros(num_rows, dtype='3float32')))
+
+    c.append(pf.Column(name='DIAMETER', format='1E',
+                       unit='METERS', array=np.zeros(num_rows, dtype='float32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in array_geometry: tblhdu.header.update(key, array_geometry[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
 
 
-
-  for key in array_geometry: tblhdu.header.update(key, array_geometry[key])
-  for key in common: tblhdu.header.update(key, common[key])
-  
-  return tblhdu
-    
 def make_antenna(config='config.xml', num_rows=1):
-  """  Creates a vanilla ANTENNA table HDU
+    """  Creates a vanilla ANTENNA table HDU
   
   Notes
   -----
@@ -197,70 +218,70 @@ def make_antenna(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards  = parseConfig('ANTENNA', config)
-  common = parseConfig('COMMON', config)
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('ANTENNA', config)
+    common = parseConfig('COMMON', config)
 
-  nband = params['NBAND']
-  npcal = params['NPCAL']
-  
-  
-  c = []
-  
-  c.append(pf.Column(name='TIME', format='1D',\
-   unit='DAYS',array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='TIME_INTERVAL', format='1E',\
-    unit='DAYS', array=np.zeros(num_rows,dtype='float32')))
-  
-  c.append(pf.Column(name='ANNAME', format='8A',\
-    array=np.zeros(num_rows,dtype='a8')))
-  
-  c.append(pf.Column(name='ANTENNA_NO', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='ARRAY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='NO_LEVELS',  format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='POLTYA', format='1A',\
-    array=np.zeros(num_rows,dtype='a1')))
+    nband = params['NBAND']
+    npcal = params['NPCAL']
 
-  c.append(pf.Column(name='POLTYB', format='1A',\
-    array=np.zeros(num_rows,dtype='a1')))
-      
-  pol_format = '%iE'%nband
-  pol_dtype  = '%ifloat32'%nband
-  c.append(pf.Column(name='POLAA', format=pol_format,\
-    unit='DEGREES', array=np.zeros(num_rows,dtype=pol_dtype)))
-  
-  c.append(pf.Column(name='POLAB', format=pol_format,\
-    unit='DEGREES', array=np.zeros(num_rows,dtype=pol_dtype)))
+    c = []
 
-  # nb: Was encontering errors with CASA with this column
-  #c.append(pf.Column(name='POLCALA', format='1E',\
-  #  array=np.zeros(32,dtype='float32')))
-  
-  # nb: Was encontering errors with CASA with this column  
-  #c.append(pf.Column(name='POLCALB', format='1E',\
-  #  array=np.zeros(32,dtype='float32')))
-  
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
-  
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
+    c.append(pf.Column(name='TIME', format='1D',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float32')))
 
-  return tblhdu
+    c.append(pf.Column(name='TIME_INTERVAL', format='1E',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='ANNAME', format='8A',
+                       array=np.zeros(num_rows, dtype='a8')))
+
+    c.append(pf.Column(name='ANTENNA_NO', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='NO_LEVELS', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='POLTYA', format='1A',
+                       array=np.zeros(num_rows, dtype='a1')))
+
+    c.append(pf.Column(name='POLTYB', format='1A',
+                       array=np.zeros(num_rows, dtype='a1')))
+
+    pol_format = '%iE' % nband
+    pol_dtype = '%ifloat32' % nband
+    c.append(pf.Column(name='POLAA', format=pol_format,
+                       unit='DEGREES', array=np.zeros(num_rows, dtype=pol_dtype)))
+
+    c.append(pf.Column(name='POLAB', format=pol_format,
+                       unit='DEGREES', array=np.zeros(num_rows, dtype=pol_dtype)))
+
+    # nb: Was encontering errors with CASA with this column
+    #c.append(pf.Column(name='POLCALA', format='1E',\
+    #  array=np.zeros(32,dtype='float32')))
+
+    # nb: Was encontering errors with CASA with this column
+    #c.append(pf.Column(name='POLCALB', format='1E',\
+    #  array=np.zeros(32,dtype='float32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_frequency(config='config.xml', num_rows=1):
-  """ Creates a vanilla FREQUENCY table HDU
+    """ Creates a vanilla FREQUENCY table HDU
   
   Notes
   -----
@@ -281,51 +302,51 @@ def make_frequency(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('FREQUENCY', config)
-  common  = parseConfig('COMMON', config)
-  
-  nband = params['NBAND']
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('FREQUENCY', config)
+    common = parseConfig('COMMON', config)
 
-  c = []
-  
-  c.append(pf.Column(name='FREQID',   format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    nband = params['NBAND']
 
-  ba_format = '%iD'%nband
-  ba_dtype  = '%ifloat64'%nband    
-  c.append(pf.Column(name='BANDFREQ', format=ba_format,\
-    unit='HZ', array=np.zeros(num_rows,dtype=ba_dtype)))
-  
-  ch_format = '%iE'%nband
-  ch_dtype  = '%ifloat32'%nband
-  c.append(pf.Column(name='CH_WIDTH', format=ch_format,\
-    unit='HZ', array=np.zeros(num_rows,dtype=ch_dtype)))
+    c = []
 
-  c.append(pf.Column(name='TOTAL_BANDWIDTH', format='1E',\
-    unit='HZ', array=np.zeros(num_rows,dtype='float32')))
-  
-  si_format = '%iJ'%nband
-  si_dtype  = '%iint32'%nband
-  c.append(pf.Column(name='SIDEBAND', format=si_format,\
-    array=np.zeros(num_rows,dtype=si_dtype)))
-  
-  # Not really sure what this does, so commented it out
-  #c.append(pf.Column(name='BB_CHAN',  format='1J',\
-  #  array=np.zeros(num_rows,dtype='int32')))
-  
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
-  
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-  
-  return tblhdu
-  
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    ba_format = '%iD' % nband
+    ba_dtype = '%ifloat64' % nband
+    c.append(pf.Column(name='BANDFREQ', format=ba_format,
+                       unit='HZ', array=np.zeros(num_rows, dtype=ba_dtype)))
+
+    ch_format = '%iE' % nband
+    ch_dtype = '%ifloat32' % nband
+    c.append(pf.Column(name='CH_WIDTH', format=ch_format,
+                       unit='HZ', array=np.zeros(num_rows, dtype=ch_dtype)))
+
+    c.append(pf.Column(name='TOTAL_BANDWIDTH', format='1E',
+                       unit='HZ', array=np.zeros(num_rows, dtype='float32')))
+
+    si_format = '%iJ' % nband
+    si_dtype = '%iint32' % nband
+    c.append(pf.Column(name='SIDEBAND', format=si_format,
+                       array=np.zeros(num_rows, dtype=si_dtype)))
+
+    # Not really sure what this does, so commented it out
+    #c.append(pf.Column(name='BB_CHAN',  format='1J',\
+    #  array=np.zeros(num_rows,dtype='int32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_source(config='config.xml', num_rows=1):
-  """ Creates a vanilla SOURCE table HDU
+    """ Creates a vanilla SOURCE table HDU
 
   Notes
   -----
@@ -363,104 +384,104 @@ num_rows: int
   number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards  = parseConfig('SOURCE', config)
-  common = parseConfig('COMMON', config)
-  
-  nband = params['NBAND']
-  so_format = '%iE'%nband
-  so_dtype  = '%ifloat32'%nband
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('SOURCE', config)
+    common = parseConfig('COMMON', config)
 
-  c=[]
+    nband = params['NBAND']
+    so_format = '%iE' % nband
+    so_dtype = '%ifloat32' % nband
 
-  c.append(pf.Column(name='SOURCE_ID',    format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='SOURCE',   format='16A',\
-    array=np.zeros(num_rows,dtype='16a')))
-    
-  c.append(pf.Column(name='QUAL',     format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='CALCODE',  format='4A',\
-    array=np.zeros(num_rows,dtype='4a')))
-    
-  c.append(pf.Column(name='FREQID',   format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='IFLUX',    format=so_format,\
-    array=np.zeros(num_rows,dtype=so_dtype)))
-  
-  c.append(pf.Column(name='QFLUX',    format=so_format,\
-    array=np.zeros(num_rows,dtype=so_dtype)))
-  
-  c.append(pf.Column(name='UFLUX',    format=so_format,\
-    array=np.zeros(num_rows,dtype=so_dtype)))
-  
-  c.append(pf.Column(name='VFLUX',    format=so_format,\
-    array=np.zeros(num_rows,dtype=so_dtype)))
-  
-  c.append(pf.Column(name='ALPHA',    format=so_format,\
-    array=np.zeros(num_rows,dtype=so_dtype)))
-  
-  c.append(pf.Column(name='FREQOFF',  format=so_format,
-    array=np.zeros(num_rows,dtype=so_dtype)))
-  
-  c.append(pf.Column(name='RAEPO',    format='1D',\
-   unit='DEGREES', array=np.zeros(num_rows,dtype='float64')))
-  
-  c.append(pf.Column(name='DECEPO',    format='1D',\
-   unit='DEGREES', array=np.zeros(num_rows, dtype='float64')))
-  
-  c.append(pf.Column(name='EQUINOX',    format='8A',\
-    array=np.zeros(num_rows,dtype='8a')))
-    
-  c.append(pf.Column(name='RAAPP',    format='1D',\
-   unit='DEGREES', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='DECAPP',   format='1D',\
-   unit='DEGREES', array=np.zeros(num_rows,dtype='float64')))
-  
-  sv_format = '%iD'%nband
-  sv_dtype  = '%ifloat64'%nband
-  c.append(pf.Column(name='SYSVEL',   format=sv_format,\
-    unit='METERS/SEC', array=np.zeros(num_rows,dtype=sv_dtype)))
-  
-  c.append(pf.Column(name='VELTYP',   format='8A',\
-    array=np.zeros(num_rows,dtype='8a')))
-  
-  c.append(pf.Column(name='VELDEF',   format='8A',\
-    array=np.zeros(num_rows,dtype='8a')))
+    c = []
 
-  rf_format = '%iD'%nband
-  rf_dtype  = '%ifloat64'%nband
-  c.append(pf.Column(name='RESTFREQ', format=rf_format,\
-   unit='HZ', array=np.zeros(num_rows,dtype=rf_dtype)))
-  
-  c.append(pf.Column(name='PMRA',     format='1D',\
-   unit='DEGREES/DAY', array=np.zeros(num_rows,dtype='float64')))
-  
-  c.append(pf.Column(name='PMDEC',    format='1D',\
-   unit='DEGREES/DAY', array=np.zeros(num_rows,dtype='float64')))
-  
-  c.append(pf.Column(name='PARALLAX', format='1E',\
-   unit='ARCSEC', array=np.zeros(num_rows,dtype='float32')))
+    c.append(pf.Column(name='SOURCE_ID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c.append(pf.Column(name='SOURCE', format='16A',
+                       array=np.zeros(num_rows, dtype='16a')))
 
+    c.append(pf.Column(name='QUAL', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-      
-  return tblhdu
+    c.append(pf.Column(name='CALCODE', format='4A',
+                       array=np.zeros(num_rows, dtype='4a')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='IFLUX', format=so_format,
+                       array=np.zeros(num_rows, dtype=so_dtype)))
+
+    c.append(pf.Column(name='QFLUX', format=so_format,
+                       array=np.zeros(num_rows, dtype=so_dtype)))
+
+    c.append(pf.Column(name='UFLUX', format=so_format,
+                       array=np.zeros(num_rows, dtype=so_dtype)))
+
+    c.append(pf.Column(name='VFLUX', format=so_format,
+                       array=np.zeros(num_rows, dtype=so_dtype)))
+
+    c.append(pf.Column(name='ALPHA', format=so_format,
+                       array=np.zeros(num_rows, dtype=so_dtype)))
+
+    c.append(pf.Column(name='FREQOFF', format=so_format,
+                       array=np.zeros(num_rows, dtype=so_dtype)))
+
+    c.append(pf.Column(name='RAEPO', format='1D',
+                       unit='DEGREES', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='DECEPO', format='1D',
+                       unit='DEGREES', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='EQUINOX', format='8A',
+                       array=np.zeros(num_rows, dtype='8a')))
+
+    c.append(pf.Column(name='RAAPP', format='1D',
+                       unit='DEGREES', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='DECAPP', format='1D',
+                       unit='DEGREES', array=np.zeros(num_rows, dtype='float64')))
+
+    sv_format = '%iD' % nband
+    sv_dtype = '%ifloat64' % nband
+    c.append(pf.Column(name='SYSVEL', format=sv_format,
+                       unit='METERS/SEC', array=np.zeros(num_rows, dtype=sv_dtype)))
+
+    c.append(pf.Column(name='VELTYP', format='8A',
+                       array=np.zeros(num_rows, dtype='8a')))
+
+    c.append(pf.Column(name='VELDEF', format='8A',
+                       array=np.zeros(num_rows, dtype='8a')))
+
+    rf_format = '%iD' % nband
+    rf_dtype = '%ifloat64' % nband
+    c.append(pf.Column(name='RESTFREQ', format=rf_format,
+                       unit='HZ', array=np.zeros(num_rows, dtype=rf_dtype)))
+
+    c.append(pf.Column(name='PMRA', format='1D',
+                       unit='DEGREES/DAY', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='PMDEC', format='1D',
+                       unit='DEGREES/DAY', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='PARALLAX', format='1E',
+                       unit='ARCSEC', array=np.zeros(num_rows, dtype='float32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_uv_data(config='config.xml', num_rows=1, uu_data=None, vv_data=None, ww_data=None,
-                date_data=None, time_data=None, baseline_data=None, filter_data=None, source_data=None,
-                freqid_data=None, inttim_data=None, weights_data=None, gateid_data=None,
-                flux_data=None, weights_col=False):
-  """ Creates a vanilla UV_DATA table HDU
+                 date_data=None, time_data=None, baseline_data=None, filter_data=None, source_data=None,
+                 freqid_data=None, inttim_data=None, weights_data=None, gateid_data=None,
+                 flux_data=None, weights_col=False):
+    """ Creates a vanilla UV_DATA table HDU
   
   Parameters
   ----------
@@ -491,65 +512,63 @@ def make_uv_data(config='config.xml', num_rows=1, uu_data=None, vv_data=None, ww
   
 
   """
-  c = []                
-  
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards  = parseConfig('UV_DATA', config)
-  common = parseConfig('COMMON', config)
-  
-  if uu_data == None: uu_data = np.zeros(num_rows,dtype='float32')
-  if vv_data == None: vv_data = np.zeros(num_rows,dtype='float32')
-  if ww_data == None: ww_data = np.zeros(num_rows,dtype='float32')
-  if date_data == None: date_data = np.zeros(num_rows,dtype='float64')
-  if time_data == None: time_data = np.zeros(num_rows,dtype='float64')
-  if baseline_data == None: baseline_data = np.zeros(num_rows,dtype='int32')
-  if source_data == None: source_data =np.zeros(num_rows,dtype='int32')
-  if freqid_data == None: freqid_data = np.zeros(num_rows,dtype='int32')
-  if inttim_data == None: inttim_data = np.zeros(num_rows,dtype='float32')
-                                          
-  c.append(pf.Column(name='UU', format='1E', unit='SECONDS', array=uu_data))   
-  c.append(pf.Column(name='VV', format='1E', unit='SECONDS', array=vv_data))
-  c.append(pf.Column(name='WW', format='1E', unit='SECONDS', array=ww_data))
-  c.append(pf.Column(name='DATE', format='1D', unit='DAYS', array=date_data))
-  c.append(pf.Column(name='TIME', format='1D', unit='DAYS', array=time_data))
-  c.append(pf.Column(name='BASELINE', format='1J', array=baseline_data))
-  c.append(pf.Column(name='SOURCE',  format='1J',  array=source_data))  
-  c.append(pf.Column(name='FREQID', format='1J',   array=freqid_data))
-  c.append(pf.Column(name='INTTIM', format='1E', unit='SECONDS', array=inttim_data))
-  
-  # The following depends on number of stokes, number of bands and number of channels
-  nchan   = params['NCHAN']
-  nstokes = params['NSTOKES']
-  nband   = params['NBAND']
-  flux_nbits = nchan * nstokes * nband * 2 # 2= Real & Im
-  weights_nbits = nstokes * nband  # 2= Real & Im
-  flux_format = '%iE'%flux_nbits
-  flux_dtype  = '%ifloat32'%flux_nbits
-  weights_format = '%iE'%weights_nbits
-  weights_dtype  = '%ifloat32'%weights_nbits
-  
-  if flux_data  == None:  flux_data = np.zeros(num_rows, dtype=flux_dtype)
-  if weights_data == None: weights_data = np.zeros(num_rows, dtype=weights_dtype)
-  
-  c.append(pf.Column(name='FLUX', format=flux_format, unit='UNCALIB', array=flux_data))
-  
-  if weights_col:
-    c.append(pf.Column(name='WEIGHT', format=weights_format, array=weights_data))
-  
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c = []
 
-  for key in sorted(common): tblhdu.header.update(key, common[key])
-  for key in sorted(cards): tblhdu.header.update(key, cards[key])
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('UV_DATA', config)
+    common = parseConfig('COMMON', config)
 
-  return tblhdu
+    if uu_data == None: uu_data = np.zeros(num_rows, dtype='float32')
+    if vv_data == None: vv_data = np.zeros(num_rows, dtype='float32')
+    if ww_data == None: ww_data = np.zeros(num_rows, dtype='float32')
+    if date_data == None: date_data = np.zeros(num_rows, dtype='float64')
+    if time_data == None: time_data = np.zeros(num_rows, dtype='float64')
+    if baseline_data == None: baseline_data = np.zeros(num_rows, dtype='int32')
+    if source_data == None: source_data = np.zeros(num_rows, dtype='int32')
+    if freqid_data == None: freqid_data = np.zeros(num_rows, dtype='int32')
+    if inttim_data == None: inttim_data = np.zeros(num_rows, dtype='float32')
 
+    c.append(pf.Column(name='UU', format='1E', unit='SECONDS', array=uu_data))
+    c.append(pf.Column(name='VV', format='1E', unit='SECONDS', array=vv_data))
+    c.append(pf.Column(name='WW', format='1E', unit='SECONDS', array=ww_data))
+    c.append(pf.Column(name='DATE', format='1D', unit='DAYS', array=date_data))
+    c.append(pf.Column(name='TIME', format='1D', unit='DAYS', array=time_data))
+    c.append(pf.Column(name='BASELINE', format='1J', array=baseline_data))
+    c.append(pf.Column(name='SOURCE', format='1J', array=source_data))
+    c.append(pf.Column(name='FREQID', format='1J', array=freqid_data))
+    c.append(pf.Column(name='INTTIM', format='1E', unit='SECONDS', array=inttim_data))
 
+    # The following depends on number of stokes, number of bands and number of channels
+    nchan = params['NCHAN']
+    nstokes = params['NSTOKES']
+    nband = params['NBAND']
+    flux_nbits = nchan * nstokes * nband * 2 # 2= Real & Im
+    weights_nbits = nstokes * nband  # 2= Real & Im
+    flux_format = '%iE' % flux_nbits
+    flux_dtype = '%ifloat32' % flux_nbits
+    weights_format = '%iE' % weights_nbits
+    weights_dtype = '%ifloat32' % weights_nbits
+
+    if flux_data == None:  flux_data = np.zeros(num_rows, dtype=flux_dtype)
+    if weights_data == None: weights_data = np.zeros(num_rows, dtype=weights_dtype)
+
+    c.append(pf.Column(name='FLUX', format=flux_format, unit='UNCALIB', array=flux_data))
+
+    if weights_col:
+        c.append(pf.Column(name='WEIGHT', format=weights_format, array=weights_data))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in sorted(common): tblhdu.header.update(key, common[key])
+    for key in sorted(cards): tblhdu.header.update(key, cards[key])
+
+    return tblhdu
 
 
 def make_interferometer_model(config='config.xml', num_rows=1):
-  """
+    """
   Creates a vanilla INTERFEROMETER_MODEL table HDU.
 
   Notes
@@ -583,65 +602,66 @@ def make_interferometer_model(config='config.xml', num_rows=1):
     
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('INTERFEROMETER_MODEL', config)
-  common  = parseConfig('COMMON', config)
-  
-  c = []
-                                        
-  c.append(pf.Column(name='TIME', format='1D',\
-   unit='DAYS', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='TIME_INTERVAL',format='1E',\
-   unit='DAYS', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='SOURCE_ID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ANTENNA_NO', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ARRAY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='I.FAR.ROT',    format='1E',\
-    unit='RAD/M**2', array=np.zeros(num_rows,dtype='float32')))
-    
-  c.append(pf.Column(name='FREQ.VAR',     format='1E',\
-    unit='HZ', array=np.zeros(num_rows,dtype='float32')))
-    
-  c.append(pf.Column(name='PDELAY_1',     format='1E',\
-   unit='TURNS', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='GDELAY_1',     format='1E',\
-   unit='SECONDS',array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='PRATE_1', format='1E',\
-   unit='HZ', array=np.zeros(num_rows,dtype='float32')))
-  
-  c.append(pf.Column(name='GRATE_1', format='1E',\
-   unit='SEC/SEC', array=np.zeros(num_rows,dtype='float32')))
-  
-  c.append(pf.Column(name='DISP_1', format='1E',\
-   unit='SECONDS', array=np.zeros(num_rows,dtype='float32')))
-  
-  c.append(pf.Column(name='DDISP_1', format='1E',\
-   unit='SEC/SEC', array=np.zeros(num_rows,dtype='float32')))
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('INTERFEROMETER_MODEL', config)
+    common = parseConfig('COMMON', config)
 
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c = []
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-       
-  return tblhdu      
-                                    
+    c.append(pf.Column(name='TIME', format='1D',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='TIME_INTERVAL', format='1E',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='SOURCE_ID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ANTENNA_NO', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='I.FAR.ROT', format='1E',
+                       unit='RAD/M**2', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='FREQ.VAR', format='1E',
+                       unit='HZ', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='PDELAY_1', format='1E',
+                       unit='TURNS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='GDELAY_1', format='1E',
+                       unit='SECONDS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='PRATE_1', format='1E',
+                       unit='HZ', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='GRATE_1', format='1E',
+                       unit='SEC/SEC', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='DISP_1', format='1E',
+                       unit='SECONDS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='DDISP_1', format='1E',
+                       unit='SEC/SEC', array=np.zeros(num_rows, dtype='float32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
+
 def make_system_temperature(config='config.xml', num_rows=1):
-  """ Creates a vanilla SYSTEM_TEMPERATURE table HDU
+    """ Creates a vanilla SYSTEM_TEMPERATURE table HDU
   
   Notes
   -----
@@ -667,47 +687,48 @@ def make_system_temperature(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('SYSTEM_TEMPERATURE', config)
-  common  = parseConfig('COMMON', config)
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('SYSTEM_TEMPERATURE', config)
+    common = parseConfig('COMMON', config)
 
-  c = []
-  
-  c.append(pf.Column(name='TIME',  format='1D',\
-   unit='DAYS', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='TIME_INTERVAL',  format='1E',\
-   unit='DAYS', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='SOURCE_ID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ANTENNA_NO', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ARRAY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='TSYS_1', format='1E',\
-   unit='KELVIN', array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='TANT_1', format='1E',\
-   unit='KELVIN', array=np.zeros(num_rows,dtype='int32')))
+    c = []
 
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c.append(pf.Column(name='TIME', format='1D',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float64')))
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-  
-  return tblhdu   
+    c.append(pf.Column(name='TIME_INTERVAL', format='1E',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='SOURCE_ID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ANTENNA_NO', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='TSYS_1', format='1E',
+                       unit='KELVIN', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='TANT_1', format='1E',
+                       unit='KELVIN', array=np.zeros(num_rows, dtype='int32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_gain_curve(config='config.xml', num_rows=1):
-  """ Creates a vanilla GAIN_CURVE table HDU
+    """ Creates a vanilla GAIN_CURVE table HDU
     
   Notes
   --------------------------------
@@ -737,56 +758,57 @@ def make_gain_curve(config='config.xml', num_rows=1):
     
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('GAIN_CURVE', config)
-  common  = parseConfig('COMMON', config)
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('GAIN_CURVE', config)
+    common = parseConfig('COMMON', config)
 
-  c = []
-  
-  c.append(pf.Column(name='ANTENNA_NO', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ARRAY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='TYPE_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='NTERM_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='X_TYP_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='Y_TYP_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='X_VAL_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='Y_VAL_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='GAIN_1', format='1E',\
-    array=np.zeros(num_rows,dtype='float32')))
-  
-  c.append(pf.Column(name='SENS_1', format='1E',\
-   unit='K/JY', array=np.zeros(num_rows,dtype='float32')))
-  
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c = []
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
+    c.append(pf.Column(name='ANTENNA_NO', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  return tblhdu
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='TYPE_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='NTERM_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='X_TYP_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='Y_TYP_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='X_VAL_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='Y_VAL_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='GAIN_1', format='1E',
+                       array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='SENS_1', format='1E',
+                       unit='K/JY', array=np.zeros(num_rows, dtype='float32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_phase_cal(config='config.xml', num_rows=1):
-  """ Creates a vanilla PHASE-CAL table HDU
+    """ Creates a vanilla PHASE-CAL table HDU
 
 
   Notes
@@ -816,60 +838,60 @@ def make_phase_cal(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
     
   """
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('PHASE_CAL', config)
-  common  = parseConfig('COMMON', config)
-  
-  c = []
-                                        
-  c.append(pf.Column(name='TIME', format='1D',\
-    array=np.zeros(num_rows,dtype='float64'), unit='DAYS'))
-    
-  c.append(pf.Column(name='TIME_INTERVAL', format='1E',\
-   unit='DAYS', array=np.zeros(num_rows,dtype='float32')))
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('PHASE_CAL', config)
+    common = parseConfig('COMMON', config)
 
-  c.append(pf.Column(name='SOURCE_ID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c = []
 
-  c.append(pf.Column(name='ANTENNA_NO', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='TIME', format='1D',
+                       array=np.zeros(num_rows, dtype='float64'), unit='DAYS'))
 
-  c.append(pf.Column(name='ARRAY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='TIME_INTERVAL', format='1E',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float32')))
 
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='SOURCE_ID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  c.append(pf.Column(name='CABLE_CAL', format='1E',\
-   unit='SECONDS', array=np.zeros(num_rows,dtype='float32')))
+    c.append(pf.Column(name='ANTENNA_NO', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  c.append(pf.Column(name='STATE_1', format='1J',\
-   unit='PERCENT', array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  c.append(pf.Column(name='PC_FREQ_1', format='1J',\
-   unit='HZ', array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  c.append(pf.Column(name='PC_REAL_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='CABLE_CAL', format='1E',
+                       unit='SECONDS', array=np.zeros(num_rows, dtype='float32')))
 
-  c.append(pf.Column(name='PC_IMAG_1', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='STATE_1', format='1J',
+                       unit='PERCENT', array=np.zeros(num_rows, dtype='int32')))
 
-  c.append(pf.Column(name='PC_RATE_1', format='1J',\
-   unit='SEC/SEC', array=np.zeros(num_rows,dtype='int32')))
+    c.append(pf.Column(name='PC_FREQ_1', format='1J',
+                       unit='HZ', array=np.zeros(num_rows, dtype='int32')))
 
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
+    c.append(pf.Column(name='PC_REAL_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
+    c.append(pf.Column(name='PC_IMAG_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-    
-  return tblhdu
+    c.append(pf.Column(name='PC_RATE_1', format='1J',
+                       unit='SEC/SEC', array=np.zeros(num_rows, dtype='int32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_flag(config='config.xml', num_rows=1):
-  """ Creates a vanilla FLAG table HDU
+    """ Creates a vanilla FLAG table HDU
   
 
   Notes
@@ -897,54 +919,54 @@ def make_flag(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('FLAG', config)
-  common  = parseConfig('COMMON', config)
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('FLAG', config)
+    common = parseConfig('COMMON', config)
 
-  c = []
-    
-  c.append(pf.Column(name='SOURCE_ID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='ARRAY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='ANTS', format='2J',\
-    array=np.zeros(num_rows,dtype='2int32')))
-  
-  c.append(pf.Column(name='FREQID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='TIMERANG', format='2E',\
-    unit='DAYS', array=np.zeros(num_rows,dtype='2float32')))
-  
-  c.append(pf.Column(name='BANDS', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-  
-  c.append(pf.Column(name='CHANS', format='2J',\
-    array=np.zeros(num_rows,dtype='2int32')))
-  
-  c.append(pf.Column(name='PFLAGS', format='4J',\
-    array=np.zeros(num_rows,dtype='4int32')))
-  
-  c.append(pf.Column(name='REASON', format='24A',\
-    array=np.zeros(num_rows,dtype='a24')))
-  
-  c.append(pf.Column(name='SEVERITY', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
+    c = []
 
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
-  
+    c.append(pf.Column(name='SOURCE_ID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-    
-  return tblhdu
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ANTS', format='2J',
+                       array=np.zeros(num_rows, dtype='2int32')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='TIMERANG', format='2E',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='2float32')))
+
+    c.append(pf.Column(name='BANDS', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='CHANS', format='2J',
+                       array=np.zeros(num_rows, dtype='2int32')))
+
+    c.append(pf.Column(name='PFLAGS', format='4J',
+                       array=np.zeros(num_rows, dtype='4int32')))
+
+    c.append(pf.Column(name='REASON', format='24A',
+                       array=np.zeros(num_rows, dtype='a24')))
+
+    c.append(pf.Column(name='SEVERITY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_bandpass(config='config.xml', num_rows=1):
-  """ Creates a vanilla BANDPASS table HDU
+    """ Creates a vanilla BANDPASS table HDU
   
   Notes
   -----
@@ -970,95 +992,97 @@ def make_bandpass(config='config.xml', num_rows=1):
     number of rows to generate. Rows will be filled with numpy zeros.
   """
 
-  # Generate headers from config file
-  params = parseConfig('PARAMETERS', config)
-  cards = parseConfig('BANDPASS', config)
-  common  = parseConfig('COMMON', config)
+    # Generate headers from config file
+    params = parseConfig('PARAMETERS', config)
+    cards = parseConfig('BANDPASS', config)
+    common = parseConfig('COMMON', config)
 
+    c = []
 
-  c = []
-  
-  c.append(pf.Column(name='TIME', format='1D',\
-   unit='DAYS', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='TIME_INTERVAL', format='1E',\
-   unit='DAYS',array=np.zeros(num_rows,dtype='float32')))
-   
-  c.append(pf.Column(name='SOURCE_ID', format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ANTENNA_NO',format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='ARRAY',     format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='FREQID',    format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='BANDWIDTH', format='1E',\
-    unit='HZ', array=np.zeros(num_rows,dtype='float32')))
-    
-  c.append(pf.Column(name='BAND_FREQ', format='1D',\
-   unit='HZ', array=np.zeros(num_rows,dtype='float64')))
-   
-  c.append(pf.Column(name='REFANT_1',  format='1J',\
-    array=np.zeros(num_rows,dtype='int32')))
-    
-  c.append(pf.Column(name='BREAL_1',  format='1024E',\
-    array=np.zeros(num_rows,dtype='1024float32')))
-    
-  c.append(pf.Column(name='BIMAG_1',  format='1024E',\
-    array=np.zeros(num_rows,dtype='1024float32')))
-  
-  coldefs = pf.ColDefs(c)
-  tblhdu = pf.new_table(coldefs)
-  
+    c.append(pf.Column(name='TIME', format='1D',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float64')))
 
-  for key in cards: tblhdu.header.update(key, cards[key])
-  for key in common: tblhdu.header.update(key, common[key])
-    
-  return tblhdu  
+    c.append(pf.Column(name='TIME_INTERVAL', format='1E',
+                       unit='DAYS', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='SOURCE_ID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ANTENNA_NO', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='ARRAY', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='FREQID', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='BANDWIDTH', format='1E',
+                       unit='HZ', array=np.zeros(num_rows, dtype='float32')))
+
+    c.append(pf.Column(name='BAND_FREQ', format='1D',
+                       unit='HZ', array=np.zeros(num_rows, dtype='float64')))
+
+    c.append(pf.Column(name='REFANT_1', format='1J',
+                       array=np.zeros(num_rows, dtype='int32')))
+
+    c.append(pf.Column(name='BREAL_1', format='1024E',
+                       array=np.zeros(num_rows, dtype='1024float32')))
+
+    c.append(pf.Column(name='BIMAG_1', format='1024E',
+                       array=np.zeros(num_rows, dtype='1024float32')))
+
+    coldefs = pf.ColDefs(c)
+    tblhdu = pf.new_table(coldefs)
+
+    for key in cards: tblhdu.header.update(key, cards[key])
+    for key in common: tblhdu.header.update(key, common[key])
+
+    return tblhdu
+
 
 def make_weather():
-  """ Makes weather table
-  The WEATHER table contains meteorological data for the antennæ and times 
-  used in the FITS-IDI file.
-  
-  This table is currently not supported (on the todo list)
-  
-  """
-  pass
+    """ Makes weather table
+    The WEATHER table contains meteorological data for the antennæ and times
+    used in the FITS-IDI file.
+
+    This table is currently not supported (on the todo list)
+
+    """
+    pass
+
 
 def make_baseline():
-  """Makes baseline table
-  The BASELINE table contains baseline-dependent multiplicative and additive corrections.
-  
-  This table is currently not supported (on the todo list)
-  
-  """
-  pass
+    """Makes baseline table
+    The BASELINE table contains baseline-dependent multiplicative and additive corrections.
+
+    This table is currently not supported (on the todo list)
+
+    """
+    pass
+
 
 def make_calibration():
-  """ Make calibration table
+    """ Make calibration table
   
-  From the FITS IDI documentation:
-  This chapter is included for documentation and discussion purposes only. So far as this 
-  author is aware, no software has been implemented to either write or read the CALIBRATION table.
-  Therefore, the description provided in this section should be regarded as tentative. 
-  In fact, it is not at all clear what the intentions were in the case of some of the 
-  columns specified for this table.
-  
-    This table is currently not supported (on the very bottom of the todo list)
-  """
-  pass
+    From the FITS IDI documentation:
+    This chapter is included for documentation and discussion purposes only. So far as this
+    author is aware, no software has been implemented to either write or read the CALIBRATION table.
+    Therefore, the description provided in this section should be regarded as tentative.
+    In fact, it is not at all clear what the intentions were in the case of some of the
+    columns specified for this table.
+
+      This table is currently not supported (on the very bottom of the todo list)
+    """
+    pass
+
 
 def make_model_comps():
-  """ Make model comps table
+    """ Make model comps table
   
-  The MODEL COMPS table is one of those reserved for use by the VLBA.
-  As such, I can't see anyone in CASPER needing it any time soon.
-  
-  Again, this table is currently not supported (on the todo list)
-  """
-  pass
+    The MODEL COMPS table is one of those reserved for use by the VLBA.
+    As such, I can't see anyone in CASPER needing it any time soon.
+
+    Again, this table is currently not supported (on the todo list)
+    """
+    pass

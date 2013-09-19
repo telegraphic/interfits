@@ -7,12 +7,12 @@ def generate_lalc():
     """ Check that creating a fits-idi->interfits->fits-idi creates identical data. """
 
     lalc = InterFits('test_lalc.LA')
-    lalc.export_fitsidi('test_lalc.fitsidi', 'test_lalc.xml')
+    lalc.exportFitsidi('test_lalc.fitsidi', 'test_lalc.xml')
 
     ok_count = 0
     assert ok_count == 0
 
-def test_compare_lalc():
+def test_compare_flux():
 
     uvf  = InterFits('test_lalc.fitsidi')
     lalc = InterFits('test_lalc.LA')
@@ -24,14 +24,13 @@ def test_compare_lalc():
     lalc_bls = lalc.d_uv_data['BASELINE']
     uvf_bls  = uvf.d_uv_data['BASELINE']
 
-    #print lalc_bls
-    #print uvf_bls
-
     assert np.allclose(lalc_bls, uvf_bls)
     print "PASS: BASELINE IDS MATCH"
 
     assert lalc_flux.shape == uvf_flux.shape
     print "PASS: FLUX SHAPE MATCH"
+    print lalc_flux.shape
+    print uvf_flux.shape
 
     print "Testing flux data..."
     for row in range(0, lalc_flux.shape[0]):
@@ -61,8 +60,70 @@ def test_compare_lalc():
 
     print "PASS: FLUX DATA MATCH"
 
+    print "Testing stokes generator..."
+    xxl, yyl, xyl, yxl = lalc.formatStokes()
+    xxu, yyu, xyu, yxu = uvf.formatStokes()
+
+    try:
+        assert np.allclose(np.abs(xxl), np.abs(xxu))
+        assert np.allclose(np.abs(yyl), np.abs(yyu))
+        assert np.allclose(np.abs(xyl), np.abs(xyu))
+        assert np.allclose(np.abs(yxl), np.abs(yxu))
+
+    except AssertionError:
+        print "ERROR: Flux values do not agree"
+        raise
+    print "PASS: FLUX DATA STOKES FORMAT"
+
+def test_compare_headers():
+
+    uvf  = InterFits('test_lalc.fitsidi')
+    lalc = InterFits('test_lalc.LA')
+
+    ok_count = 0
+    # Check all header values
+    h1("Testing header keywords")
+    h2("Common")
+    ok_count += compare_dicts(uvf.h_common, lalc.h_common)
+    h2("Parameters")
+    ok_count += compare_dicts(uvf.h_params, lalc.h_params)
+    h2("Antenna")
+    ok_count += compare_dicts(uvf.h_antenna, lalc.h_antenna)
+    h2("Array Geometry")
+    ok_count += compare_dicts(uvf.h_array_geometry, lalc.h_array_geometry)
+    h2("Frequency")
+    ok_count += compare_dicts(uvf.h_frequency, lalc.h_frequency)
+    h2("Source")
+    ok_count += compare_dicts(uvf.h_source, lalc.h_source)
+    h2("UV DATA")
+    ok_count += compare_dicts(uvf.h_uv_data, lalc.h_uv_data)
+
+    assert ok_count == 7
+
+def test_compare_data():
+
+    uvf  = InterFits('test_lalc.fitsidi')
+    lalc = InterFits('test_lalc.LA')
+
+    ok_count = 0
+    # Check all header values
+    h1("Testing data tables")
+    h2("Antenna")
+    ok_count += compare_dicts(uvf.d_antenna, lalc.d_antenna)
+    h2("Array Geometry")
+    ok_count += compare_dicts(uvf.d_array_geometry, lalc.d_array_geometry)
+    h2("Frequency")
+    ok_count += compare_dicts(uvf.d_frequency, lalc.d_frequency)
+    h2("Source")
+    ok_count += compare_dicts(uvf.d_source, lalc.d_source)
+
+    #assert ok_count == 7
+
+
 if __name__ == '__main__':
     
     #generate_lalc()
 
-    test_compare_lalc()
+    test_compare_flux()
+    #test_compare_headers()
+    #test_compare_data()

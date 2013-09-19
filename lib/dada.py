@@ -83,7 +83,7 @@ class DadaSubBand(object):
     def __init__(self, filename):
         self.filename = filename
         self.read_header()
-        self.read_data(1)
+        self.read_data(0)
         self.datestamp = self.header['UTC_START']
 
     def __repr__(self):
@@ -197,7 +197,7 @@ class DadaSubBand(object):
         fullmatrix = fullmatrix.reshape(nint, self.nchan,
                                         self.nstation, self.npol,
                                         self.nstation, self.npol)
-        fullmatrix = fullmatrix.transpose([0, 1, 2, 4, 3, 5])
+        fullmatrix = fullmatrix.transpose([0, 2, 4, 1, 3, 5])
 
         self.data = fullmatrix
 

@@ -4,8 +4,8 @@
 interfits.py
 ============
 
-Python class which reads a variety of different visibility formats, particularly those
-used by the LEDA instrument. Currently reads UV-FITS, FITS-IDI, DADA and L-FILE formats.
+Python class which reads a variety of different visibility formats.
+Currently reads UV-FITS and FITS-IDI.
 
 TODO: Add support for Measurement Sets.
 
@@ -52,6 +52,8 @@ class VerificationError(Exception):
 
 
 class InterFits(object):
+    """ InterFits: UV-data interchange class
+    """
     def __init__(self, filename=None):
         self.filename = filename
 
@@ -174,26 +176,7 @@ class InterFits(object):
         RA          yes         Right ascension of phase center
         DEC         yes         Declination of phase center
         -------     ---------   -----------
-        
-        
-        Numeric Codes for Stokes Parameters
-    
-        Code    Parameter
-        ----    ---------
-        1       I
-        2       Q
-        3       U
-        4       V
-        -1      RR
-        -2      LL
-        -3      RL
-        -4      LR
-        -5      XX
-        -6      YY
-        -7      XY
-        -8      YX
-        ----    ---------
-    
+
         """
 
         h1("Opening uvfits data")
@@ -319,14 +302,14 @@ class InterFits(object):
         self.d_uv_data['SOURCE'] = np.ones(num_rows)
 
     def readFitsidi(self, from_file=True, load_uv_data=True):
-        """ Open and read the contents of a FITS-IDI file 
-        
+        """ Open and read the contents of a FITS-IDI file
+
         Notes
         -----
-        
+
         Regular axes for Data matrix
         (from FITS-IDI document, assuming uv-fits adheres)
-        
+
         Name        Mandatory   Description
         -------     ---------   -----------
         COMPLEX     yes         Real, imaginary, weight
@@ -336,10 +319,10 @@ class InterFits(object):
         RA          yes         Right ascension of phase center
         DEC         yes         Declination of phase center
         -------     ---------   -----------
-        
-        
+
+
         Numeric Codes for Stokes Parameters
-    
+
         Code    Parameter
         ----    ---------
         1       I
@@ -355,7 +338,7 @@ class InterFits(object):
         -7      XY
         -8      YX
         ----    ---------
-    
+
         """
 
         if from_file:
@@ -529,6 +512,47 @@ class InterFits(object):
 
         return vis
 
+    def s2arr(self, val):
+        """ Put a single value into a numpy array """
+        return np.array([val])
+
+    def setDefaults(self, n_uv_rows):
+        """ FIll headers and data with default data """
+
+        zero_vec = np.zeros(n_uv_rows).astype('float32')
+        ones_vec = np.ones(n_uv_rows).astype('float32')
+        self.d_uv_data["DATE"] = zero_vec
+        self.d_uv_data["UU"] = zero_vec
+        self.d_uv_data["VV"] = zero_vec
+        self.d_uv_data["WW"] = zero_vec
+        self.d_uv_data["FREQID"] = ones_vec
+        self.d_uv_data["INTTIM"] = ones_vec
+        self.d_uv_data["SOURCE"] = ones_vec
+
+
+        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+        self.stokes_vals = [-5, -6, -7, -8]
+
+        self.d_array_geometry["ANNAME"] = \
+            np.array(["Stand%d"%(i + 1) for i in range(len(self.d_array_geometry["ANNAME"]))])
+        self.d_array_geometry["NOSTA"]  = \
+            np.array([i + 1 for i in range(len(self.d_array_geometry["NOSTA"]))])
+
+        self.d_frequency["FREQID"]    = self.s2arr(1)
+        self.d_frequency["BANDFREQ"]  = self.s2arr(0)
+
+        self.d_source["EQUINOX"]   = self.s2arr('J2000')
+        self.d_source["SOURCE"]    = self.s2arr('ZENITH')
+        self.d_source["SOURCE_ID"] = self.s2arr(1)
+
+    def setDefaultsLeda(self, n_uv_rows):
+        """ set LEDA specific default values """
+        self.setDefaults(n_uv_rows)
+
+        self.d_frequency["CH_WIDTH"]        = self.s2arr(24e3)
+        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(2.616e6)
+        self.h_uv_data["TELESCOP"] = 'LWA-OVRO'
+
     def readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4):
         """ Read a LEDA L-file 
         
@@ -576,18 +600,9 @@ class InterFits(object):
 
         h2("Generating baseline IDs")
         # Create baseline IDs using MIRIAD >255 antenna format (which sucks)
-        bls, ant_arr = [], []
-        for ii in range(1, n_ant + 1):
-            for jj in range(1, n_ant + 1):
-                if jj >= ii:
-                    ant_arr.append((ii, jj))
-                    if ii > 255 or jj > 255:
-                        bl_id = ii * 2048 + jj + 65536
-                    else:
-                        bl_id = 256 * ii + jj
-                    bls.append(bl_id)
-        bl_lower = []
+        bls, ant_arr = self.generateBaselineIds(n_ant)
 
+        bl_lower = []
         for dd in range(vis.shape[0]):
             bl_lower += bls
 
@@ -602,19 +617,8 @@ class InterFits(object):
             yx = vis[0, idx1 + 1, idx2]
             flux[ii] = np.column_stack((xx, yy, xy, yx)).flatten()
 
-        h2("Populating interfits dictionaries")
-        # Create interfits dictionary entries
-        zero_vec = np.zeros_like(bl_lower).astype('float32')
-        ones_vec = np.ones_like(bl_lower).astype('float32')
         self.d_uv_data["BASELINE"] = bl_lower
         self.d_uv_data["FLUX"] = flux
-        self.d_uv_data["DATE"] = zero_vec
-        self.d_uv_data["UU"] = zero_vec
-        self.d_uv_data["VV"] = zero_vec
-        self.d_uv_data["WW"] = zero_vec
-        self.d_uv_data["FREQID"] = ones_vec
-        self.d_uv_data["INTTIM"] = ones_vec
-        self.d_uv_data["SOURCE"] = ones_vec
 
         h1("Generating FITS-IDI schema from XML")
         hdu_primary = make_primary(config=config_xml)
@@ -636,22 +640,111 @@ class InterFits(object):
 
         # We are now ready to back-fill Interfits dictionaries using readfitsidi
         self.fits = hdulist
-        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
-        self.stokes_vals = [-5, -6, -7, -8]
         self.readFitsidi(from_file=False, load_uv_data=False)
-        # For testing only
-        #assert self.d_uv_data == uvd
 
+        h2("Populating interfits dictionaries")
+        # Create interfits dictionary entries
+        self.setDefaultsLeda(n_uv_rows=len(bl_lower))
 
-    def readDada(self):
+    def readDada(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4, xmlbase=None):
         """ Read a LEDA DADA file
         """
 
+        h2("Loading visibility data")
         d = dada.DadaSubBand(self.filename)
         vis = d.data
-
+        #print d.header
         print vis.shape
 
+        # Need to convert into real & imag
+        # Not a major performance hit as these are super fast.
+        re_vis = np.real(vis)
+        im_vis = np.imag(vis)
+        # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
+
+        h2("Generating baseline IDs")
+        bls, ant_arr = self.generateBaselineIds(n_ant)
+        bl_lower = []
+        for dd in range(vis.shape[0]):
+            bl_lower += bls
+
+        h2("Converting visibilities to FLUX columns")
+        flux = np.zeros([len(bl_lower), n_chans * n_stk * 2])
+        for ii in range(len(bl_lower)):
+            ant1, ant2 = ant_arr[ii]
+            ant1, ant2 = ant1 - 1, ant2 - 1
+            re_xx = re_vis[0, ant1, ant2, :, 0, 0]
+            re_yy = re_vis[0, ant1, ant2, :, 0, 1]
+            re_xy = re_vis[0, ant1, ant2, :, 1, 0]
+            re_yx = re_vis[0, ant1, ant2, :, 1, 1]
+            im_xx = im_vis[0, ant1, ant2, :, 0, 0]
+            im_yy = im_vis[0, ant1, ant2, :, 0, 1]
+            im_xy = im_vis[0, ant1, ant2, :, 1, 0]
+            im_yx = im_vis[0, ant1, ant2, :, 1, 1]
+            flux[ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
+        #print flux.shape
+        self.d_uv_data["BASELINE"] = bl_lower
+        self.d_uv_data["FLUX"] = flux
+
+        h1("Generating FITS-IDI schema from XML")
+        if xmlbase is None:
+            dirname, filename = os.path.split(os.path.abspath(__file__))
+            xmlbase = os.path.join(dirname, 'config/config.xml')
+        self.xmlData = etree.parse(xmlbase)
+
+        hdu_primary = make_primary(config=self.xmlData)
+        tbl_array_geometry = make_array_geometry(config=self.xmlData, num_rows=n_ant)
+        tbl_antenna = make_antenna(config=self.xmlData, num_rows=n_ant)
+        tbl_frequency = make_frequency(config=self.xmlData, num_rows=1)
+        tbl_source = make_source(config=self.xmlData, num_rows=1)
+
+        #h1('Creating HDU list')
+        hdulist = pf.HDUList(
+            [hdu_primary,
+             tbl_array_geometry,
+             tbl_frequency,
+             tbl_antenna,
+             tbl_source
+            ])
+        #print hdulist.info()
+        #hdulist.verify()
+
+        # We are now ready to back-fill Interfits dictionaries using readfitsidi
+        self.fits = hdulist
+        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+        self.stokes_vals = [-5, -6, -7, -8]
+        self.readFitsidi(from_file=False, load_uv_data=False)
+
+
+        h2("Populating interfits dictionaries")
+        self.setDefaults(n_uv_rows=len(bl_lower))
+
+
+        self.obs_code = ''
+        self.correlator = d.header["INSTRUMENT"]
+        self.telescope  = d.header["TELESCOPE"]
+        self.date_obs   = d.header["UTC_START"]
+        self.h_params["NSTOKES"] = 4
+        self.h_params["NBAND"]   = 1
+        self.h_params["NCHAN"]   = int(d.header["NCHAN"])
+        self.h_common["REF_FREQ"] = float(d.header["CFREQ"]) * 1e6
+        self.h_common["CHAN_BW"]  = float(d.header["BW"]) * 1e6 / self.h_params["NCHAN"]
+        self.h_common["REF_PIXL"] = self.h_params["NCHAN"] / 2
+        self.h_common["RDATE"]    = d.header["UTC_START"][0:10]  # Ignore time
+
+
+        self.d_frequency["CH_WIDTH"]  = self.h_common["CHAN_BW"]
+        self.d_frequency["TOTAL_BANDWIDTH"] = float(d.header["BW"]) * 1e6
+        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+        self.stokes_vals = [-5, -6, -7, -8]
+
+        self.d_array_geometry["ANNAME"] = ["Stand%03d"%i for i in range(len(self.d_array_geometry["ANNAME"]))]
+        self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
+
+        print d.header
+        print self.d_frequency
+        print self.h_common
+        print self.h_params
 
     def setXml(self, table, keyword, value):
         """ Find a header parameter and replace it """
@@ -665,7 +758,7 @@ class InterFits(object):
             print "Error: Something went wrong with XML parsing"
             print "%s, %s, %s" % (table, keyword, value)
 
-    def generateFitsidiXml(self, xmlbase, filename_out):
+    def generateFitsidiXml(self, xmlbase=None, filename_out=None):
         """ Generate XML file that encodes fitsidi structure 
         
         xmlbase: str
@@ -673,6 +766,11 @@ class InterFits(object):
         filename_out: str
             name of output file
         """
+
+        if xmlbase is None:
+            dirname, filename = os.path.split(os.path.abspath(__file__))
+            xmlbase = os.path.join(dirname, 'config/config.xml')
+
         self.xmlData = etree.parse(xmlbase)
 
         # Look in the config file or fits-idi convention for
@@ -712,13 +810,14 @@ class InterFits(object):
             self.setXml("UV_DATA", "CDELT3", self.d_frequency['CH_WIDTH'])
         self.setXml("UV_DATA", "CRVAL3", self.h_common['REF_FREQ'])
 
-        if os.path.isfile(filename_out):
-            os.remove(filename_out)
-        print "Writing to %s" % filename_out
-        with open(filename_out, 'w') as f:
-            f.write(etree.tostring(self.xmlData))
+        if filename_out:
+            if os.path.isfile(filename_out):
+                os.remove(filename_out)
+            print "Writing to %s" % filename_out
+            with open(filename_out, 'w') as f:
+                f.write(etree.tostring(self.xmlData))
 
-    def export_fitsidi(self, filename_out, config_xml):
+    def exportFitsidi(self, filename_out, config_xml):
         """ Export data as FITS IDI 
         
         filename_out: str
@@ -846,25 +945,6 @@ class InterFits(object):
         print 'Writing to file %s...' % filename_out
         hdulist.writeto(filename_out)
 
-    def get_baseline_ids(self, ref_ant, triangle='upper'):
-        """ Retrieve baseline ids """
-        bl_ids = []
-
-        if triangle == 'upper':
-            # Get values in array
-            if ref_ant > 1:
-                for i in range(1, ref_ant):
-                    bl_ids.append(i * 256 + ref_ant)
-
-            # Get row
-            bl_min, bl_max = (256 * ref_ant, 256 * ref_ant + self.n_ant)
-            for b in range(bl_min, bl_max + 1): bl_ids.append(b)
-
-            return bl_ids
-        else:
-            print "Lower triangle not supported yet"
-            raise
-
     def verify_baseline_order(self):
         """ Check baseline IDs are in order """
 
@@ -946,9 +1026,9 @@ class InterFits(object):
         xy_data = data[:, 4::8] + 1j * data[:, 5::8]
         yx_data = data[:, 6::8] + 1j * data[:, 7::8]
 
-        return xx_data, yy_data, xy_data, yx_data
+        return np.array((xx_data, yy_data, xy_data, yx_data))
 
-    def baseline_id_to_antennas(self, bl_id):
+    def get_baseline_ids(self, bl_id):
         """ Convert baseline ID into an antenna pair.
 
         Uses MIRIAD convention for antennas > 256
@@ -962,9 +1042,17 @@ class InterFits(object):
             ant2 = bl_id % 256
         return ant1, ant2
 
-
-if __name__ == '__main__':
-    #filename = 'test.fitsidi'
-    #uv = InterFits(filename)
-    #uv.verify()
-    pass
+    def generateBaselineIds(self, n_ant):
+        """ Generate a list of baseline IDs from
+        """
+        bls, ant_arr = [], []
+        for ii in range(1, n_ant + 1):
+            for jj in range(1, n_ant + 1):
+                if jj >= ii:
+                    ant_arr.append((ii, jj))
+                    if ii > 255 or jj > 255:
+                        bl_id = ii * 2048 + jj + 65536
+                    else:
+                        bl_id = 256 * ii + jj
+                    bls.append(bl_id)
+        return bls, ant_arr

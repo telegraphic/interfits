@@ -258,7 +258,7 @@ class InterFitsGui(QtGui.QWidget):
                         try:
                             ant1, ant2 = ax.get_title().split(" ")
                         except:
-                            ant1 = int(ax.get_title().strip('Tile').strip('Antenna'))
+                            ant1 = int(ax.get_title().strip('Tile').strip('Antenna').strip('Stand'))
                             ant2 = ant1                          
                         try:
                             self.spin_ref_ant.setValue(int(ant1))
@@ -323,6 +323,9 @@ class InterFitsGui(QtGui.QWidget):
         
         If stat is set to None, will use currentIndex of stat_select combo box
         """
+        if len(data.shape) == 1:
+            data = np.reshape(data, (1, len(data)))
+
         x_pow = np.abs(data)
         if stat == None:
             if self.scale_select.currentIndex() == 0:
@@ -355,6 +358,10 @@ class InterFitsGui(QtGui.QWidget):
 
     def plot_imshow(self, ax, data, stat=None, show_cbar=False, label_axes=True):
         """ Imshow plotter """
+
+        if len(data.shape) == 1:
+            data = np.reshape(data, (1, len(data)))
+
         if stat == 'amp':
             if self.scale_select.currentIndex() != 1:
                 img = ax.imshow(np.abs(data))
@@ -494,7 +501,9 @@ class InterFitsGui(QtGui.QWidget):
         
         
         # Extract the relevant baselines using a truth array
-        bls = bls.tolist()
+
+        #bls = bls.tolist()
+
         bl_ids = self.uv.get_baseline_ids(ref_ant)
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
@@ -551,7 +560,7 @@ class InterFitsGui(QtGui.QWidget):
         bls = self.uv.d_uv_data['BASELINE']
 
         # Extract the relevant baselines using a truth array
-        bls = bls.tolist()
+        # bls = bls.tolist()
         bl_ids = [256*i + i for i in range(1,self.uv.n_ant+1)]
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
@@ -685,6 +694,7 @@ class InterFitsGui(QtGui.QWidget):
         rf  = self.uv.h_common['REF_FREQ'] /1e6
         chw = self.uv.d_frequency['CH_WIDTH']
         bw  = self.uv.d_frequency['TOTAL_BANDWIDTH'] / 1e6
+        #print rf, chw, bw
 
         ticks = ax.get_xticks()
         #print ticks
