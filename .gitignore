@@ -4,5 +4,10 @@
 *.LC
 *.dada
 *.pyc
+*.h5
+*.hdf5
+converter/lconvert
+converter/corr2uvfits
+converter/corr2uvfits.dSYM/
 old/
 .idea/

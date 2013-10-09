@@ -119,8 +119,8 @@ class InterFitsGui(QtGui.QWidget):
         
         self.lab_info     = QtGui.QLabel(" ")
         
-        self.axes_select, self.laxes_select = self.createSpinner("Axis", self.updateAxes, 0, 1, 1)
-        self.spin_ref_ant, self.lspin_ref_ant = self.createSpinner("Ant 1", self.updateAxes, 1, 2, 1)
+        self.axes_select,   self.laxes_select = self.createSpinner("Axis", self.updateAxes, 0, 1, 1)
+        self.spin_ref_ant,  self.lspin_ref_ant = self.createSpinner("Ant 1", self.updateAxes, 1, 2, 1)
         self.spin_ref_ant2, self.lspin_ref_ant2 = self.createSpinner("Ant 2", self.updateAxes, 1, 2, 1)
         
         self.plot_select = QtGui.QComboBox(self)

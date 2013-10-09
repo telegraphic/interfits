@@ -1,0 +1,41 @@
+\contentsline {section}{\numberline {1}INTRODUCTION}{1}
+\contentsline {subsection}{\numberline {1.1}Purpose}{1}
+\contentsline {subsection}{\numberline {1.2}Example Application}{1}
+\contentsline {subsection}{\numberline {1.3}Scope}{2}
+\contentsline {subsection}{\numberline {1.4}Objectives}{3}
+\contentsline {subsection}{\numberline {1.5}New Functions}{4}
+\contentsline {subsection}{\numberline {1.6}History and acknowledgements}{5}
+\contentsline {section}{\numberline {2}COMPILING AND LINKING}{5}
+\contentsline {section}{\numberline {3}EXPLANATION AND EXAMPLES}{6}
+\contentsline {subsection}{\numberline {3.1}Spherical Trigonometry}{6}
+\contentsline {subsubsection}{\numberline {3.1.1}Formatting angles}{8}
+\contentsline {subsection}{\numberline {3.2}Vectors and Matrices}{9}
+\contentsline {subsubsection}{\numberline {3.2.1}Using vectors}{11}
+\contentsline {subsection}{\numberline {3.3}Celestial Coordinate Systems}{12}
+\contentsline {subsection}{\numberline {3.4}Precession and Nutation}{13}
+\contentsline {subsubsection}{\numberline {3.4.1}SLALIB support for precession and nutation}{16}
+\contentsline {subsection}{\numberline {3.5}Mean Places}{17}
+\contentsline {subsection}{\numberline {3.6}Epoch}{17}
+\contentsline {subsection}{\numberline {3.7}Proper Motion}{18}
+\contentsline {subsection}{\numberline {3.8}Parallax and Radial Velocity}{18}
+\contentsline {subsection}{\numberline {3.9}Aberration}{19}
+\contentsline {subsection}{\numberline {3.10}Different Sorts of Mean Place}{20}
+\contentsline {subsection}{\numberline {3.11}Mean Place Transformations}{21}
+\contentsline {subsection}{\numberline {3.12}Mean Place to Apparent Place}{23}
+\contentsline {subsection}{\numberline {3.13}Apparent Place to Observed Place}{25}
+\contentsline {subsubsection}{\numberline {3.13.1}Refraction}{26}
+\contentsline {subsubsection}{\numberline {3.13.2}Efficiency considerations}{27}
+\contentsline {subsection}{\numberline {3.14}The Hipparcos Catalogue and the ICRS}{28}
+\contentsline {subsection}{\numberline {3.15}Time-scales}{28}
+\contentsline {subsubsection}{\numberline {3.15.1}Atomic Time: TAI}{29}
+\contentsline {subsubsection}{\numberline {3.15.2}Universal Time: UT, UTC}{31}
+\contentsline {subsubsection}{\numberline {3.15.3}Sidereal Time: GMST, LAST {\it etc.}}{32}
+\contentsline {subsubsection}{\numberline {3.15.4}Dynamical Time: TT, TDB}{33}
+\contentsline {subsection}{\numberline {3.16}Calendars}{34}
+\contentsline {subsection}{\numberline {3.17}Geocentric Coordinates}{35}
+\contentsline {subsection}{\numberline {3.18}Ephemerides}{36}
+\contentsline {subsection}{\numberline {3.19}Radial Velocity and Light-Time Corrections}{49}
+\contentsline {subsection}{\numberline {3.20}Focal-Plane Astrometry}{50}
+\contentsline {subsection}{\numberline {3.21}Numerical Methods}{51}
+\contentsline {section}{\numberline {4}SUBPROGRAM SPECIFICATIONS}{55}
+\contentsline {section}{\numberline {5}SUMMARY OF CALLS}{228}

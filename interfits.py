@@ -284,7 +284,7 @@ class InterFits(object):
         # Best line in the history of indexing below
         # Note the 0:2 and *2 at the end is to not include weights
         print "Converting DATA column to FLUX convention..."
-        self.d_uv_data['FLUX'] = self.d_uv_data['DATA'][:, :, :, :, :, :, 0:2].reshape(s[0], s[3] * s[4] * 2)
+        self.d_uv_data['FLUX'] = self.d_uv_data['DATA'][..., 0:2].astype('float32').reshape(s[0], s[3] * s[4] * 2)
 
         self.h_params["NSTOKES"] = len(self.stokes_vals)
         self.h_params["NBAND"] = self.d_uv_data['DATA'].shape[-4]
@@ -319,25 +319,6 @@ class InterFits(object):
         RA          yes         Right ascension of phase center
         DEC         yes         Declination of phase center
         -------     ---------   -----------
-
-
-        Numeric Codes for Stokes Parameters
-
-        Code    Parameter
-        ----    ---------
-        1       I
-        2       Q
-        3       U
-        4       V
-        -1      RR
-        -2      LL
-        -3      RL
-        -4      LR
-        -5      XX
-        -6      YY
-        -7      XY
-        -8      YX
-        ----    ---------
 
         """
 
@@ -452,8 +433,11 @@ class InterFits(object):
                 except KeyError:
                     print "\tWARNING: %s key error raised." % k
 
-            uv_datacols = ['UU', 'VV', 'WW', 'BASELINE', 'DATE', 'FLUX', 'INTTIM', 'FREQID', 'SOURCE']
-            for k in uv_datacols: self.d_uv_data[k] = self.tbl_uv_data.data[k]
+            uv_datacols  = ['UU', 'VV', 'WW', 'BASELINE', 'DATE', 'FLUX', 'INTTIM', 'FREQID', 'SOURCE']
+            for k in uv_datacols:
+                self.d_uv_data[k] = self.tbl_uv_data.data[k]
+
+            self.d_uv_data["FLUX"] = self.d_uv_data["FLUX"].astype('float32')
 
             # Find stokes axis type and values
             stokes_axid = 0
@@ -500,7 +484,7 @@ class InterFits(object):
         #h2("Forming visibility matrix")
         # Create a visibility matrix, and use indexing to populate upper triangle
         n_dumps = lfa.shape[0]
-        vis = np.zeros([n_dumps, n_antpol, n_antpol, n_chans, 2])
+        vis = np.zeros([n_dumps, n_antpol, n_antpol, n_chans, 2], dtype='float32')
         iup = np.triu_indices(n_antpol, 1)
         idiag = (np.arange(0, n_antpol), np.arange(0, n_antpol))
 
@@ -512,46 +496,7 @@ class InterFits(object):
 
         return vis
 
-    def s2arr(self, val):
-        """ Put a single value into a numpy array """
-        return np.array([val])
 
-    def setDefaults(self, n_uv_rows):
-        """ FIll headers and data with default data """
-
-        zero_vec = np.zeros(n_uv_rows).astype('float32')
-        ones_vec = np.ones(n_uv_rows).astype('float32')
-        self.d_uv_data["DATE"] = zero_vec
-        self.d_uv_data["UU"] = zero_vec
-        self.d_uv_data["VV"] = zero_vec
-        self.d_uv_data["WW"] = zero_vec
-        self.d_uv_data["FREQID"] = ones_vec
-        self.d_uv_data["INTTIM"] = ones_vec
-        self.d_uv_data["SOURCE"] = ones_vec
-
-
-        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
-        self.stokes_vals = [-5, -6, -7, -8]
-
-        self.d_array_geometry["ANNAME"] = \
-            np.array(["Stand%d"%(i + 1) for i in range(len(self.d_array_geometry["ANNAME"]))])
-        self.d_array_geometry["NOSTA"]  = \
-            np.array([i + 1 for i in range(len(self.d_array_geometry["NOSTA"]))])
-
-        self.d_frequency["FREQID"]    = self.s2arr(1)
-        self.d_frequency["BANDFREQ"]  = self.s2arr(0)
-
-        self.d_source["EQUINOX"]   = self.s2arr('J2000')
-        self.d_source["SOURCE"]    = self.s2arr('ZENITH')
-        self.d_source["SOURCE_ID"] = self.s2arr(1)
-
-    def setDefaultsLeda(self, n_uv_rows):
-        """ set LEDA specific default values """
-        self.setDefaults(n_uv_rows)
-
-        self.d_frequency["CH_WIDTH"]        = self.s2arr(24e3)
-        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(2.616e6)
-        self.h_uv_data["TELESCOP"] = 'LWA-OVRO'
 
     def readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4):
         """ Read a LEDA L-file 
@@ -607,7 +552,7 @@ class InterFits(object):
             bl_lower += bls
 
         h2("Converting visibilities to FLUX columns")
-        flux = np.zeros([len(bl_lower), n_chans * n_stk * 2])
+        flux = np.zeros([len(bl_lower), n_chans * n_stk * 2], dtype='float32')
         for ii in range(len(bl_lower)):
             ant1, ant2 = ant_arr[ii]
             idx1, idx2 = 2 * (ant1 - 1), 2 * (ant2 - 1)
@@ -758,6 +703,46 @@ class InterFits(object):
             print "Error: Something went wrong with XML parsing"
             print "%s, %s, %s" % (table, keyword, value)
 
+    def s2arr(self, val):
+        """ Put a single value into a numpy array """
+        return np.array([val])
+
+    def setDefaults(self, n_uv_rows):
+        """ FIll headers and data with default data """
+
+        zero_vec = np.zeros(n_uv_rows).astype('float32')
+        ones_vec = np.ones(n_uv_rows).astype('float32')
+        self.d_uv_data["DATE"] = zero_vec
+        self.d_uv_data["UU"] = zero_vec
+        self.d_uv_data["VV"] = zero_vec
+        self.d_uv_data["WW"] = zero_vec
+        self.d_uv_data["FREQID"] = ones_vec
+        self.d_uv_data["INTTIM"] = ones_vec
+        self.d_uv_data["SOURCE"] = ones_vec
+
+
+        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+        self.stokes_vals = [-5, -6, -7, -8]
+
+        self.d_array_geometry["ANNAME"] = \
+            np.array(["Stand%d"%(i + 1) for i in range(len(self.d_array_geometry["ANNAME"]))])
+        self.d_array_geometry["NOSTA"]  = \
+            np.array([i + 1 for i in range(len(self.d_array_geometry["NOSTA"]))])
+
+        self.d_frequency["FREQID"]    = self.s2arr(1)
+        self.d_frequency["BANDFREQ"]  = self.s2arr(0)
+
+        self.d_source["EQUINOX"]   = self.s2arr('J2000')
+        self.d_source["SOURCE"]    = self.s2arr('ZENITH')
+        self.d_source["SOURCE_ID"] = self.s2arr(1)
+
+    def setDefaultsLeda(self, n_uv_rows):
+        """ set LEDA specific default values """
+        self.setDefaults(n_uv_rows)
+
+        self.d_frequency["CH_WIDTH"]        = self.s2arr(24e3)
+        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(2.616e6)
+        self.h_uv_data["TELESCOP"] = 'LWA-OVRO'
     def generateFitsidiXml(self, xmlbase=None, filename_out=None):
         """ Generate XML file that encodes fitsidi structure 
         
@@ -1026,9 +1011,9 @@ class InterFits(object):
         xy_data = data[:, 4::8] + 1j * data[:, 5::8]
         yx_data = data[:, 6::8] + 1j * data[:, 7::8]
 
-        return np.array((xx_data, yy_data, xy_data, yx_data))
+        return np.array((xx_data, yy_data, xy_data, yx_data)).astype('complex128')
 
-    def get_baseline_ids(self, bl_id):
+    def get_antenna_id(self, bl_id):
         """ Convert baseline ID into an antenna pair.
 
         Uses MIRIAD convention for antennas > 256
@@ -1041,6 +1026,14 @@ class InterFits(object):
             ant1 = bl_id / 256
             ant2 = bl_id % 256
         return ant1, ant2
+
+    def get_baseline_id(self, ant1, ant2):
+        """ Convert antenna pair into baseline ID """
+        if ant1 > 255 or ant2 > 255:
+            bl_id = ant1 * 2048 + ant2 + 65536
+        else:
+            bl_id = ant1 * 256 + ant2
+        return bl_id
 
     def generateBaselineIds(self, n_ant):
         """ Generate a list of baseline IDs from

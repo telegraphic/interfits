@@ -32,6 +32,13 @@ def test_compare_flux():
     print lalc_flux.shape
     print uvf_flux.shape
 
+    try:
+        assert lalc_flux.dtype == uvf_flux.dtype
+        print "PASS: FLUX DTYPE MATCH"
+    except AssertionError:
+        print "ERROR: DTYPES DO NOT MATCH"
+    print lalc_flux.dtype, uvf_flux.dtype
+
     print "Testing flux data..."
     for row in range(0, lalc_flux.shape[0]):
         if not row % 1000:
