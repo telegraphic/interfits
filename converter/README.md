@@ -1,10 +1,24 @@
-LEDA-512 DADA -> UVFITS CONVERTER
----------------------------------
+Readme
+======
 
-dada2uvfits.py is a script to generate a uvfits file from LEDA-512 dada files.
+**dada2uvfits.py** is a script to generate a *.uvfits* file from a LEDA-512 *.dada* file.
+Briefly, this script:
+* Converts from *.dada* to *.LA* and *.LC* using **lconvert**
+* Generates a header file from the *.dada* filestamp
+* Converts from *.LA* and *.LC* into *.uvfits*. This is done with **corr2uvfits**, 
+  which was written by Randall Wayth (back in 2008 for MWA).
 
-USAGE: 
+Usage
+-----
+From the command line, run:
+
+```
 python dada2uvfits.py <filename> [options]
+```
+
+Options are:
+
+```python
 Options:
   -h, --help            show this help message and exit
   -l, --locktoinit      Locks phase centre to initial hour angle rather than
@@ -18,22 +32,22 @@ Options:
                         Number of accumulations per OUTPUT file.
   -T ACC_TO_READ, --acctoread=ACC_TO_READ
                         Number of accumulations to read from INPUT file.
+```
 
-Note: based upon corr2uvfits, written by Randall Wayth in 2008 for MWA.
+Requirements
+------------
+**cfitsio v3:** installed in a location where the compiler/linker will see it.
 
-REQUIREMENTS:
-cfitsio v3: installed in a location where the compiler/linker will see it.
-python modules: numpy, pyephem, colorama
+**python modules:** numpy, pyephem, colorama
 
-CONTENTS:
-SLALIB_C: 				SLA library. (not to be redistributed outside the MWA project)
-uvifts.c uvfits.h: 		reader/writer of uvfits files
-corr2uvfits.c: 			reads raw binary correlation files, reformats, calls uvfits writer
-Makefile
+Install
+-------
+cd into the converter directory and run
 
-BUILDING:
-make the program by typing "make". This will create a standalone program called "corr2uvfits".
-type ./corr2uvfits
-for a summary of command line arguments.
+```
+  make
+```
+
+Which will build **corr2uvfits** and **lconvert**
 
 
