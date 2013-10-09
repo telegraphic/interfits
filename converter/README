@@ -1,12 +1,29 @@
-LEDA-512 UVFITS pipeline
-------------------------
-Author: Danny Price. Oct, 2013.
+LEDA-512 DADA -> UVFITS CONVERTER
+---------------------------------
 
-Heavily based upon: MWA 32T UVFITS visibility writer.
-Author: Randall Wayth. Feb, 2008.
+dada2uvfits.py is a script to generate a uvfits file from LEDA-512 dada files.
+
+USAGE: 
+python dada2uvfits.py <filename> [options]
+Options:
+  -h, --help            show this help message and exit
+  -l, --locktoinit      Locks phase centre to initial hour angle rather than
+                        tracking in RA.
+  -b BAND_ID, --bandid=BAND_ID
+                        sub-band ID, defaults to 1 (starts at 1 not 0)
+  -z, --test            Turn on test mode (do not run subprocesses)
+  -F FIELD_NAME, --field=FIELD_NAME
+                        Name of field. Default is Zenith.
+  -t ACC_PER_FILE, --accperfile=ACC_PER_FILE
+                        Number of accumulations per OUTPUT file.
+  -T ACC_TO_READ, --acctoread=ACC_TO_READ
+                        Number of accumulations to read from INPUT file.
+
+Note: based upon corr2uvfits, written by Randall Wayth in 2008 for MWA.
 
 REQUIREMENTS:
 cfitsio v3: installed in a location where the compiler/linker will see it.
+python modules: numpy, pyephem, colorama
 
 CONTENTS:
 SLALIB_C: 				SLA library. (not to be redistributed outside the MWA project)
@@ -19,19 +36,4 @@ make the program by typing "make". This will create a standalone program called 
 type ./corr2uvfits
 for a summary of command line arguments.
 
-A quick EXAMPLE:
-after correlation you have two files. e.g. simdat16.LACSPC (auto correlations) and simdat16.LCCSPC (cross correlations)
-
-create/update your configuration files (see the top of the supplied example files for details) :
-antenna_locations.txt
-instr_config.txt
-header.txt
-You can call these config files whatever you like, but be sure to specify the file name on the command line if
-you do not use the default names.
-
-run it:
- # example: minimal command line args
-./corr2uvfits -a simdat16.LACSPC -c simdat16_.LCCSPC -o simdat16.uvfits
- # example: turn on debugging. Specify a different header file.
-./corr2uvfits -a simdat16.LACSPC -c simdat16_.LCCSPC -o simdat16.uvfits -H myheader.txt -d
 
