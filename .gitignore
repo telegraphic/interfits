@@ -9,5 +9,6 @@
 converter/lconvert
 converter/corr2uvfits
 converter/corr2uvfits.dSYM/
+converter/SLALIB_C_untracked
 old/
 .idea/

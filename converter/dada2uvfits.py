@@ -3,7 +3,7 @@
 """
 dada2uvfits.py
 Convert LEDA-512 OV data in dada format into uvfits format
-created: 08 July 2013
+created: 08 October 2013
 """
 
 import re, sys, datetime, os, subprocess, shutil
