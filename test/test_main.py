@@ -1,7 +1,7 @@
 import sys
 sys.path.append("/Volumes/Storage/LEDA/interfits")
 
-from interfits import *
+from ledafits import *
 
 def compare_dicts(dict_a, dict_b):
     """ Compare two dictionaries to confirm they contain same data.
@@ -28,8 +28,15 @@ def compare_dicts(dict_a, dict_b):
                     assert dict_a[k] == dict_b[k]
             except:
                 if k not in ok_exceptions:
+
+                    if type(dict_a[k]) is str and dict_a[k].strip() == '':
+                        dict_a[k] = '(Empty str)'
+
+                    if type(dict_b[k]) is str and dict_b[k].strip() == '':
+                        dict_a[k] = '(Empty str)'
+
                     print "Error:", k, dict_a[k][:16], dict_b[k][:16]
-                    print type(dict_a[k])
+                    print type(dict_a[k]), type(dict_b[k])
                     all_ok = False
                 else:
                     print "INFO: Known exception: %s"%k

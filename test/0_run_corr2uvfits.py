@@ -23,7 +23,7 @@ def callSubprocess(args, test=False):
 
 if __name__ == "__main__":
     
-    fileroot = 'test_lalc'
+    fileroot = 'data/test_lalc'
     
     ######
     # Run corr2uvfits on output files

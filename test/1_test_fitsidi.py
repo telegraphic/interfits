@@ -4,15 +4,15 @@ def test_generate_fitsidi():
     """ Generate a FITS-IDI file
     """
 
-    filename_uvf  = 'test_lalc.uvfits'
+    filename_uvf  = 'data/test_lalc.uvfits'
     filename_idi = filename_uvf.rstrip('.uvfits')+'.fitsidi'
     uvf = InterFits(filename_uvf)
-    uvf.exportFitsidi(filename_idi, 'test_config.xml')
+    uvf.exportFitsidi(filename_idi)
 
 def test_compare_uv2idi():
     """ Compare a uvfits file to a fits-idi file to confirm they are equivalent """
 
-    filename_uvf  = 'test_lalc.uvfits'
+    filename_uvf  = 'data/test_lalc.uvfits'
     filename_idi = filename_uvf.rstrip('.uvfits')+'.fitsidi'
     uvf = InterFits(filename_uvf)
     idi = InterFits(filename_idi)
@@ -52,9 +52,9 @@ def test_compare_uv2idi():
 def test_compare_idi_generated():
     """ Check that creating a fits-idi->interfits->fits-idi creates identical data. """
 
-    idi = InterFits('test_lalc.fitsidi')
-    idi.exportFitsidi('test_lalc2.fitsidi', 'test_config.xml')
-    idi2 = InterFits('test_lalc2.fitsidi')
+    idi = InterFits('data/test_lalc.fitsidi')
+    idi.exportFitsidi('data/test_lalc2.fitsidi')
+    idi2 = InterFits('data/test_lalc2.fitsidi')
 
 
     ok_count = 0
@@ -88,8 +88,8 @@ def test_compare_idi_generated():
     ok_count += compare_dicts(idi.d_uv_data, idi2.d_uv_data)
 
     assert ok_count == 12
-    os.remove('test_lalc2.xml')
-    os.remove('test_lalc2.fitsidi')
+    os.remove('data/test_lalc2.xml')
+    os.remove('data/test_lalc2.fitsidi')
 
 if __name__ == '__main__':
     

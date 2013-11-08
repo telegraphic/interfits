@@ -3,19 +3,10 @@ import pylab as plt
 import time
 
 
-def generate_lalc():
-    """ Check that creating a fits-idi->interfits->fits-idi creates identical data. """
-
-    lalc = InterFits('test_lalc.LA')
-    lalc.exportFitsidi('test_lalc.fitsidi', 'test_lalc.xml')
-
-    ok_count = 0
-    assert ok_count == 0
-
 def test_compare_flux():
 
-    uvf  = InterFits('test_lalc.fitsidi')
-    lalc = InterFits('test_lalc.LA')
+    uvf  = LedaFits('data/test_lalc.fitsidi')
+    lalc = LedaFits('data/test_lalc.LA')
 
 
     lalc_flux = lalc.d_uv_data['FLUX']
@@ -84,8 +75,8 @@ def test_compare_flux():
 
 def test_compare_headers():
 
-    uvf  = InterFits('test_lalc.fitsidi')
-    lalc = InterFits('test_lalc.LA')
+    uvf  = LedaFits('data/test_lalc.fitsidi')
+    lalc = LedaFits('data/test_lalc.LA')
 
     ok_count = 0
     # Check all header values
@@ -107,30 +98,8 @@ def test_compare_headers():
 
     assert ok_count == 7
 
-def test_compare_data():
-
-    uvf  = InterFits('test_lalc.fitsidi')
-    lalc = InterFits('test_lalc.LA')
-
-    ok_count = 0
-    # Check all header values
-    h1("Testing data tables")
-    h2("Antenna")
-    ok_count += compare_dicts(uvf.d_antenna, lalc.d_antenna)
-    h2("Array Geometry")
-    ok_count += compare_dicts(uvf.d_array_geometry, lalc.d_array_geometry)
-    h2("Frequency")
-    ok_count += compare_dicts(uvf.d_frequency, lalc.d_frequency)
-    h2("Source")
-    ok_count += compare_dicts(uvf.d_source, lalc.d_source)
-
-    #assert ok_count == 7
-
 
 if __name__ == '__main__':
     
-    #generate_lalc()
-
     test_compare_flux()
-    #test_compare_headers()
-    #test_compare_data()
+    test_compare_headers()
