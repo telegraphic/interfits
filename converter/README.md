@@ -38,6 +38,8 @@ Requirements
 ------------
 **cfitsio v3:** installed in a location where the compiler/linker will see it.
 
+**SLALIB_C:**  A directory of SLALIB which is not to be redistributed (and so not in this repo)
+
 **python modules:** numpy, pyephem, colorama
 
 Install
