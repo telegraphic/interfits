@@ -9,7 +9,7 @@ def compare_dicts(dict_a, dict_b):
     Second dict may have extra keys, but must have all keys of first dict.
     """
     all_ok = True
-    ok_exceptions = ['STAXOF', 'POLCALA', 'POLCALB']
+    ok_exceptions = ['STAXOF', 'POLCALA', 'POLCALB', 'VELDEF', 'VELTYP']
 
     for k in dict_a:
         if dict_b.has_key(k):
@@ -26,6 +26,7 @@ def compare_dicts(dict_a, dict_b):
                     assert all(dict_a[k] == dict_b[k])
                 else:
                     assert dict_a[k] == dict_b[k]
+                    assert type(dict_a[k]) == type(dict_b[k])
             except:
                 if k not in ok_exceptions:
 

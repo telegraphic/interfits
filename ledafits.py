@@ -9,6 +9,8 @@ L-files and DADA files.
 """
 
 from interfits import *
+from lib import dada, uvw
+from datetime import datetime
 
 class LedaFits(InterFits):
     """ LEDA extension of InterFits class """
@@ -293,7 +295,63 @@ class LedaFits(InterFits):
 
         self.d_frequency["CH_WIDTH"]        = self.s2arr(24e3)
         self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(2.616e6)
-        self.h_uv_data["TELESCOP"]          = 'LWA-OVRO'
+        self.h_uv_data["TELESCOP"]          = "LWA-OVRO"
+
+    def generateBaselineIds(self, n_ant):
+        """ Generate a list of unique baseline IDs and antenna pairs
+
+        n_ant: number of antennas in the array
+        """
+        bls, ant_arr = [], []
+        for ii in range(1, n_ant + 1):
+            for jj in range(1, n_ant + 1):
+                if jj >= ii:
+                    ant_arr.append((ii, jj))
+                    if ii > 255 or jj > 255:
+                        bl_id = ii * 2048 + jj + 65536
+                    else:
+                        bl_id = 256 * ii + jj
+                    bls.append(bl_id)
+        return bls, ant_arr
+
+    def generateUVW(self, conjugate=False):
+        """ Generate UVW coordinates based on timestamps and array geometry
+
+        Uses pyEphem observer + lib.uvw for computations
+        """
+        # TODO: Move this to config file, support phasing
+        # Manually set Hour angle and declination to phase to zenith
+        H, d = 0, 37.240391
+
+        # Recreate list of baselines
+        h1("Generating UVW coordinates")
+        n_ant = len(self.d_array_geometry['ANNAME'])
+        bl_ids, ant_arr = self.generateBaselineIds(n_ant)
+        xyz = self.d_array_geometry['STABXYZ']
+
+        # Compute baseline vectors
+        bl_veclist, uvw_list = [], []
+        for ant_pair in ant_arr:
+            ii, jj = ant_pair[0] - 1, ant_pair[1] - 1
+            bl_vec = xyz[ii] - xyz[jj]
+            bl_veclist.append(bl_vec)
+            uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate))
+        uvw_arr = np.array(uvw_list)
+
+        # Fill with data
+        h2("Filling UV_DATA coordinates")
+        uu, vv, ww = [], [], []
+        n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
+        for ii in range(n_iters):
+            uu.append(uvw_arr[:, 0])
+            vv.append(uvw_arr[:, 1])
+            ww.append(uvw_arr[:, 2])
+
+        self.d_uv_data["UU"] = np.array(uu).ravel()
+        self.d_uv_data["VV"] = np.array(vv).ravel()
+        self.d_uv_data["WW"] = np.array(ww).ravel()
+
+        #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
 
     def leda_set_value(self, key, value):
         """ Set values which are commonly incorrect from uvfits writer """
@@ -306,10 +364,11 @@ class LedaFits(InterFits):
             self.h_uv_data['TELESCOP'] = value
 
     def readAntennaLocations(self, filename):
-        """ Read antenna locations file  """
+        """ Read antenna locations file """
         atab = np.genfromtxt(filename, comments='#', dtype='str')
         stand_ids  = atab[:, 0]
         stand_east = atab[:, 1].astype('float')
         stand_west = atab[:, 2].astype('float')
         stand_elev = atab[:, 3].astype('float')
+
 

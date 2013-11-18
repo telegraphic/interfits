@@ -49,6 +49,54 @@ def test_lalc():
 
     os.remove('data/test_lalc_direct.fitsidi')
 
+def test_lalc_json():
+
+    lalc = LedaFits('data/test_lalc.LA')
+    lalc.readJson('data/test_lalc_json/d_antenna.json')
+    lalc.generateUVW()
+    uu = lalc.d_uv_data["UU"]
+    vv = lalc.d_uv_data["VV"]
+    ww = lalc.d_uv_data["WW"]
+
+    print uu
+    print len(uu)
+
+    print "Checking data...",
+    try:
+        assert len(uu) == len(vv) == len(ww)
+    except:
+        print len(uu), len(vv), len(ww)
+        raise
+    try:
+        assert len(uu) == len(lalc.d_uv_data["BASELINE"])
+    except AssertionError:
+        print len(uu), len(lalc.d_uv_data["BASELINE"])
+        raise
+    try:
+        assert len(uu) == len(lalc.d_uv_data["FLUX"])
+    except:
+        print len(uu), len(lalc.d_uv_data["BASELINE"])
+        raise
+    print "OK"
+
+    h2("Exporting sewed data...")
+    lalc.exportFitsidi('data/test_lalc_uvw.fitsidi', '../config/config.xml')
+
+    #print "Plotting..."
+    #import pylab as plt
+    #plt.plot(uu[0:32896], vv[0:32896], 'ro')
+    #plt.show()
+
+def test_compare_idi_lalc_json():
+    lalc = LedaFits('data/test_lalc.LA')
+    lalc.readJson('data/test_lalc_json/d_antenna.json')
+    lalc.generateUVW()
+
+
+
+
 if __name__ == '__main__':
     
-    test_lalc()
+    #test_lalc()
+    #test_lalc_json()
+    test_compare_idi_lalc_json()

@@ -60,6 +60,10 @@ def load_json(filename):
 
     to_pop = []
     for key in data:
+
+        if type(data[key]) == type(u'Unicode'):
+            data[key] = str(data[key])
+
         if key.startswith("_"):
             dtype_str = data[key]
             to_pop.append(key)
@@ -73,7 +77,7 @@ def load_json(filename):
             elif dtype_str.split(" ")[0] == 'ndarray':
                 data[okey] = np.array(data[okey], dtype=dtype_str.split(" ")[1])
 
-    [data.pop(key) for key in to_pop]
+    [data.pop(key) for key in to_pop] # This line removes _dtype things
 
     return data
 

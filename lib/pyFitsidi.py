@@ -87,7 +87,25 @@ def parseConfig(tagname, config='config.xml'):
     params = dict([(child.tag, eval(child.text.strip())) for child in x.find('PARAMETERS').getchildren()])
 
     # This line makes me very happy, but will probably infuriate others:
-    vals = dict([(child.tag, eval(child.text.strip())) for child in x.find(tagname).getchildren()])
+    try:
+        vals = dict([(child.tag, eval(child.text.strip())) for child in x.find(tagname).getchildren()])
+    except SyntaxError:
+        if type(child.text.strip()) == type(" "):
+            vals = dict([(child.tag, child.text.strip()) for child in x.find(tagname).getchildren()])
+        else:
+            print child.tag
+            print child.text
+            raise
+    except NameError:
+        if type(child.text.strip()) == type(" "):
+            vals = dict([(child.tag, child.text.strip()) for child in x.find(tagname).getchildren()])
+        else:
+            print child.tag
+            print child.text
+            raise
+        print child.tag
+        print child.text
+        raise
     return vals
 
 

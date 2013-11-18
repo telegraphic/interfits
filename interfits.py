@@ -105,24 +105,41 @@ class InterFits(object):
     def readFile(self, filename):
         # Check what kind of file to load
         if filename:
+            matched = False
             regex = '([0-9A-Za-z-_]+).uvfits'
             match = re.search(regex, filename)
-            if match: self._readFile('uvfits')
+            if match:
+                self._readFile('uvfits')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).fitsidi'
             match = re.search(regex, filename)
-            if match: self._readFile('fitsidi')
+            if match:
+                self._readFile('fitsidi')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).hdf'
             match = re.search(regex, filename)
-            if match: self._readFile('hdf5')
+            if match:
+                self._readFile('hdf5')
+                matched = True
+
+            regex = '([0-9A-Za-z-_]+).json'
+            match = re.search(regex, filename)
+            if match:
+                self._readFile('json')
+                matched = True
+
+            if matched == False:
+                raise IOError("Unknown file format: %s"%filename)
 
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
         return {
             'uvfits': self.readUvfits,
             'fitsidi': self.readFitsidi,
-            'hdf5': self.readHdf5
+            'hdf5': self.readHdf5,
+            'json': self.readJson
         }.get(filetype)()
 
     def searchKeys(self, pattern, header):
@@ -231,6 +248,8 @@ class InterFits(object):
         self.d_source['SOURCE'] = self.source
         self.d_source['RAEPO'] = self.uvhead['OBSRA']
         self.d_source['DECEPO'] = self.uvhead['OBSDEC']
+
+
 
         # Load UV-DATA
         h2("Loading UV-data")
@@ -439,6 +458,60 @@ class InterFits(object):
             self.stokes_vals = stokes_vals
             self.stokes_axis = [self.stokes_codes[i] for i in stokes_vals]
 
+    def readJson(self, filename=None):
+        """ Read JSON data into InterFits dictionaries.
+
+        Notes
+        -----
+        This expects the filename to be any *.json file in a directory of .json files
+        """
+
+        if filename:
+            filepath = os.path.split(filename)[0]
+        else:
+            filepath = os.path.split(self.filename)[0]
+
+        h1("Opening JSON data")
+
+        if not os.path.exists(filepath):
+            raise IOError("Cannot read directory %s"%filepath)
+
+        try:
+            h2("Loading common keywords")
+            self.h_common = load_json(os.path.join(filepath, 'h_common.json'))
+            self.h_params = load_json(os.path.join(filepath, 'h_params.json'))
+        except IOError:
+            print "Warning: Could not load common keywords"
+        try:
+            h2("Loading antenna table")
+            self.h_antenna = load_json(os.path.join(filepath, 'h_antenna.json'))
+            self.d_antenna = load_json(os.path.join(filepath, 'd_antenna.json'))
+        except IOError:
+            print "Warning: Could not load antenna table"
+        try:
+            h2("Loading frequency table")
+            self.h_frequency = load_json(os.path.join(filepath, 'h_frequency.json'))
+            self.d_frequency = load_json(os.path.join(filepath, 'd_frequency.json'))
+        except IOError:
+            print "Warning: Could not load frequency table"
+        try:
+            h2("Loading array geometry table")
+            self.h_array_geometry = load_json(os.path.join(filepath, 'h_array_geometry.json'))
+            self.d_array_geometry = load_json(os.path.join(filepath, 'd_array_geometry.json'))
+        except IOError:
+            print "Warning: Could not load array geometry table"
+        try:
+            h2("Loading source table")
+            self.h_source = load_json(os.path.join(filepath, 'h_source.json'))
+            self.d_source = load_json(os.path.join(filepath, 'd_source.json'))
+        except IOError:
+            print "Warning: Could not load frequency table"
+        try:
+            h2("Loading UV_DATA (header)")
+            self.h_uv_data = load_json(os.path.join(filepath, 'h_uv_data.json'))
+        except IOError:
+            print "Warning: Could not load UV_DATA table header"
+
     def readHdf5(self):
         """ TODO """
         raise Exception("HDF5 support not yet implemented.")
@@ -448,7 +521,7 @@ class InterFits(object):
         """ Find a header parameter and replace it """
         try:
             self.xmlroot = self.xmlData.getroot()
-            if type(value) == str:
+            if type(value) == str or type(value) == type(u'Unicode'):
                 # Make sure strings are in single quotes
                 value = "'" + value.strip("'") + "'"
             self.xmlroot.find(table).find(keyword).text = str(value)
@@ -488,6 +561,8 @@ class InterFits(object):
         self.d_source["EQUINOX"]   = self.s2arr('J2000')
         self.d_source["SOURCE"]    = self.s2arr('ZENITH')
         self.d_source["SOURCE_ID"] = self.s2arr(1)
+        self.d_source["VELDEF"]    = self.s2arr("RADIO")
+        self.d_source["VELTYP"]    = self.s2arr("GEOCENTR")
 
     def generateFitsidiXml(self, xmlbase=None, filename_out=None):
         """ Generate XML file that encodes fitsidi structure 
@@ -547,6 +622,32 @@ class InterFits(object):
             print "Writing to %s" % filename_out
             with open(filename_out, 'w') as f:
                 f.write(etree.tostring(self.xmlData))
+
+    def exportJson(self, dirname_out, dump_uv_data = False):
+        """ Export data as a directory of JSON files.
+
+        dirname_out: str
+            name of directory to output files into.
+        dump_uv_data: bool
+            Dump UV DATA into a dictionary? Defaults to false as this is very large.
+        """
+
+        if not os.path.exists(dirname_out):
+            os.mkdir(dirname_out)
+
+        h1("Creating JSON-Numpy dictionaries in %s"%dirname_out)
+        dump_json(uvf.h_antenna, os.path.join(dirname_out, 'h_antenna.json'))
+        dump_json(uvf.h_array_geometry, os.path.join(dirname_out, 'h_array_geometry.json'))
+        #dump_json(uvf.h_common, os.path.join(dirname_out, 'h_common.json'))
+        dump_json(uvf.h_frequency, os.path.join(dirname_out, 'h_frequency.json'))
+        #dump_json(uvf.h_params, os.path.join(dirname_out, 'h_params.json'))
+        dump_json(uvf.h_uv_data, os.path.join(dirname_out, 'h_uv_data.json'))
+        dump_json(uvf.h_source, os.path.join(dirname_out, 'h_source.json'))
+
+        dump_json(uvf.d_antenna, os.path.join(dirname_out, 'd_antenna.json'))
+        dump_json(uvf.d_array_geometry, os.path.join(dirname_out, 'd_array_geometry.json'))
+        dump_json(uvf.d_frequency, os.path.join(dirname_out, 'd_frequency.json'))
+        dump_json(uvf.d_source, os.path.join(dirname_out, 'd_source.json'))
 
     def exportFitsidi(self, filename_out, config_xml=None):
         """ Export data as FITS IDI 
@@ -641,6 +742,7 @@ class InterFits(object):
                     raise
         else:
             n_rows = len(self.d_source['SOURCE'])
+            print self.d_source
             for i in range(n_rows):
                 tbl_source.data['SOURCE_ID'][i] = i + 1
                 tbl_source.data['EQUINOX'][i] = 'J2000'
@@ -776,18 +878,3 @@ class InterFits(object):
         else:
             bl_id = ant1 * 256 + ant2
         return bl_id
-
-    def generateBaselineIds(self, n_ant):
-        """ Generate a list of baseline IDs from
-        """
-        bls, ant_arr = [], []
-        for ii in range(1, n_ant + 1):
-            for jj in range(1, n_ant + 1):
-                if jj >= ii:
-                    ant_arr.append((ii, jj))
-                    if ii > 255 or jj > 255:
-                        bl_id = ii * 2048 + jj + 65536
-                    else:
-                        bl_id = 256 * ii + jj
-                    bls.append(bl_id)
-        return bls, ant_arr

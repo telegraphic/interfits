@@ -109,7 +109,7 @@ if __name__ == "__main__":
     p.add_option("-z", "--test", dest="test", action='store_true', 
                  help="Turn on test mode (do not run subprocesses)")
     p.add_option("-F", "--field", dest="field_name", type="str", default="Zenith",
-                 help="Name of field")
+                 help="Name of field. Default is Zenith")
     p.add_option("-t", "--accperfile", dest="acc_per_file", type="int", default=N_SCANS,
                  help="Number of accumulations per OUTPUT file.")
     p.add_option("-T", "--acctoread", dest="acc_to_read", type="int", default=99999,

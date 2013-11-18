@@ -14,7 +14,7 @@ import numpy as np
 
 
 OFFSET_DELTA, INT_TIME, N_INT = 1044480000, 8.53333*26/25, 100
-(latitude, longitude, elevation) = ('36.8', '-118.2', 1222)
+(latitude, longitude, elevation) = ('37.240391', '-118.28247', 1184)
 
 def callSubprocess(args, test=False):
     """ Run a subprocess call with some printing and stuff """
