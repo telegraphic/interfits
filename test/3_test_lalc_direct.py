@@ -58,8 +58,8 @@ def test_lalc_json():
     vv = lalc.d_uv_data["VV"]
     ww = lalc.d_uv_data["WW"]
 
-    print uu
-    print len(uu)
+    #print uu
+    #print len(uu)
 
     print "Checking data...",
     try:
@@ -79,6 +79,8 @@ def test_lalc_json():
         raise
     print "OK"
 
+    lalc.remove_miriad_baselines()
+
     h2("Exporting sewed data...")
     lalc.exportFitsidi('data/test_lalc_uvw.fitsidi', '../config/config.xml')
 
@@ -92,11 +94,48 @@ def test_compare_idi_lalc_json():
     lalc.readJson('data/test_lalc_json/d_antenna.json')
     lalc.generateUVW()
 
+def test_compare_cyg_lalc():
+    lalc = LedaFits('data/test_lalc_uvw.fitsidi')
+    uvf  = LedaFits('data/CygA.fitsidi')
 
+    ok_count = 0
+    h1("Testing header keywords")
+    h2("Common")
+    ok_count += compare_dicts(uvf.h_common, lalc.h_common)
+    h2("Parameters")
+    ok_count += compare_dicts(uvf.h_params, lalc.h_params)
+    h2("Antenna")
+    ok_count += compare_dicts(uvf.h_antenna, lalc.h_antenna)
+    h2("Array Geometry")
+    ok_count += compare_dicts(uvf.h_array_geometry, lalc.h_array_geometry)
+    h2("Frequency")
+    ok_count += compare_dicts(uvf.h_frequency, lalc.h_frequency)
+    h2("Source")
+    ok_count += compare_dicts(uvf.h_source, lalc.h_source)
+    h2("UV DATA")
+    ok_count += compare_dicts(uvf.h_uv_data, lalc.h_uv_data)
 
+    h1("Testing data tables")
+    h2("Antenna")
+    ok_count += compare_dicts(uvf.d_antenna, lalc.d_antenna)
+    h2("Array Geometry")
+    ok_count += compare_dicts(uvf.d_array_geometry, lalc.d_array_geometry)
+    h2("Frequency")
+    ok_count += compare_dicts(uvf.d_frequency, lalc.d_frequency)
+    h2("Source")
+    ok_count += compare_dicts(uvf.d_source, lalc.d_source)
+    h2("UV DATA")
+    ok_count += compare_dicts(uvf.d_uv_data, lalc.d_uv_data)
+
+def remove_miriad_lalc():
+    uvf = LedaFits('data/test_lalc.fitsidi')
+    uvf.remove_miriad_baselines()
+    uvf.exportFitsidi('data/test_lalc_255.fitsidi', '../config/config.xml')
 
 if __name__ == '__main__':
-    
+
+    remove_miriad_lalc()
     #test_lalc()
     #test_lalc_json()
-    test_compare_idi_lalc_json()
+    #test_compare_idi_lalc_json()
+    #test_compare_cyg_lalc()

@@ -8,6 +8,7 @@ Helper utilities from reading and writing JSON data with numpy arrays. The nativ
 encoder cannot handle numpy arrays and will chuck a hissy-fit, hence these helper functions.
 """
 
+import time
 import ephem
 import numpy as np
 
@@ -72,7 +73,8 @@ def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True):
     H: float (degrees) is the hour angle of the phase reference position
     d: float (degrees) is the declination
     in_seconds (bool): Return in microseconds (True) or meters (False)
-    Returns
+
+    Returns uvw vector (in microseconds)
     """
     sin = np.sin
     cos = np.cos
@@ -95,3 +97,20 @@ def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True):
         return uvw[:,0] / LIGHT_SPEED
     else:
         return uvw[:,0]
+
+def convertToJulianTuple(timestamp):
+    """ Convert a list of timestamps into DATE and TIME since julian midnight
+
+    FITS-IDI requires DATE parameter is set to Julian date @ midnight. TIME is
+    then indexed against this DATE.
+    """
+
+    # DATE is julian date at midnight that day
+    # TIME is in DAYS since midnight
+    julian = ephem.julian_date(time.gmtime(timestamp)[:6])
+    # Ephem returns julian date at NOON, we need at MIDNIGHT
+    julian_midnight = int(julian) - 0.5
+
+    time_elapsed = ephem.julian_date(time.gmtime(timestamp)[:6]) - julian_midnight
+
+    return julian_midnight, time_elapsed

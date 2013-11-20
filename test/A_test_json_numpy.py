@@ -22,7 +22,7 @@ def test_json():
     assert ok_count == 1
 
 def create_json_uvfits():
-    filename_uvf  = 'data/test_lalc.uvfits'
+    filename_uvf  = 'data/test_lalc.fitsidi'
     uvf = InterFits(filename_uvf)
 
     out_path = 'data/test_lalc_json'
@@ -44,7 +44,7 @@ def create_json_uvfits():
     # dump_json(uvf.d_uv_data) # DONT DUMP UVDATA - VERY LARGE!
 
 def compare_json_uvfits():
-    filename_uvf  = 'data/test_lalc.uvfits'
+    filename_uvf  = 'data/test_lalc.fitsidi'
     filename_json = 'data/test_lalc_json/h_antenna.json'
 
     uvf = InterFits(filename_uvf)
@@ -80,6 +80,22 @@ def compare_json_uvfits():
     #h2("UV DATA")
     #ok_count += compare_dicts(uvf.d_uv_data, idi.d_uv_data)
     assert ok_count == 11
+
+    print "PASS: All header and table data match"
+    try:
+        assert str(uvf.__repr__()) == str(idi.__repr__())
+        print "PASS: __repr__ match"
+    except:
+        print "ERROR: __repr__ do not match"
+        print str(uvf.__repr__())
+        print str(idi.__repr__())
+        print uvf.h_uv_data
+        print idi.h_uv_data
+        print uvf.h_array_geometry
+        print idi.h_array_geometry
+        raise
+
+    print "PASS: Comparison test passed"
 
 if __name__ == '__main__':
 

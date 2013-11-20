@@ -8,39 +8,67 @@ Extension of interfits.py with LEDA-OVRO specific methods, such as ability to re
 L-files and DADA files.
 """
 
+import time
+from datetime import datetime
 from interfits import *
 from lib import dada, uvw
-from datetime import datetime
+
+
+# TODO: Load this from config file
+OFFSET_DELTA, INT_TIME, N_INT = 1044480000, 8.53333, 100
 
 class LedaFits(InterFits):
     """ LEDA extension of InterFits class """
 
+
     def readFile(self, filename):
         # Check what kind of file to load
         if filename:
+            matched = False
             regex = '([0-9A-Za-z-_]+).uvfits'
             match = re.search(regex, filename)
-            if match: self._readFile('uvfits')
+            if match:
+                self._readFile('uvfits')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).fitsidi'
             match = re.search(regex, filename)
-            if match: self._readFile('fitsidi')
+            if match:
+                self._readFile('fitsidi')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).hdf'
             match = re.search(regex, filename)
-            if match: self._readFile('hdf5')
+            if match:
+                self._readFile('hdf5')
+                matched = True
+
+            regex = '([0-9A-Za-z-_]+).json'
+            match = re.search(regex, filename)
+            if match:
+                self._readFile('json')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).LA'
             match = re.search(regex, filename)
-            if match: self._readFile('lfile')
+            if match:
+                self._readFile('lfile')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).LC'
             match = re.search(regex, filename)
-            if match: self._readFile('lfile')
+            if match:
+                self._readFile('lfile')
+                matched = True
 
             regex = '([0-9A-Za-z-_]+).dada'
             match = re.search(regex, filename)
-            if match: self._readFile('dada')
+            if match:
+                self._readFile('dada')
+                matched = True
+
+            if matched == False:
+                raise IOError("Unknown file format: %s"%filename)
 
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
@@ -49,6 +77,7 @@ class LedaFits(InterFits):
             'fitsidi': self.readFitsidi,
             'hdf5': self.readHdf5,
             'lfile': self.readLfile,
+            'json': self.readJson,
             'dada': self.readDada
         }.get(filetype)()
 
@@ -296,6 +325,7 @@ class LedaFits(InterFits):
         self.d_frequency["CH_WIDTH"]        = self.s2arr(24e3)
         self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(2.616e6)
         self.h_uv_data["TELESCOP"]          = "LWA-OVRO"
+        self.h_array_geometry["ARRNAM"]     = "LEDA-512"
 
     def generateBaselineIds(self, n_ant):
         """ Generate a list of unique baseline IDs and antenna pairs
@@ -338,19 +368,30 @@ class LedaFits(InterFits):
             uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate))
         uvw_arr = np.array(uvw_list)
 
+        h2("Generating timestamps")
+        jd, jt = uvw.convertToJulianTuple(time.time())
+        jds = [jd for ii in range(len(ant_arr))]
+        jts = [jt for ii in range(len(ant_arr))]
+
         # Fill with data
         h2("Filling UV_DATA coordinates")
-        uu, vv, ww = [], [], []
+        uu, vv, ww, dd, tt = [], [], [],  [], []
         n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
         for ii in range(n_iters):
             uu.append(uvw_arr[:, 0])
             vv.append(uvw_arr[:, 1])
             ww.append(uvw_arr[:, 2])
+            dd.append(jds)
+            tt.append(jts)
 
-        self.d_uv_data["UU"] = np.array(uu).ravel()
-        self.d_uv_data["VV"] = np.array(vv).ravel()
-        self.d_uv_data["WW"] = np.array(ww).ravel()
+        self.d_uv_data["UU"]   = np.array(uu).ravel()
+        self.d_uv_data["VV"]   = np.array(vv).ravel()
+        self.d_uv_data["WW"]   = np.array(ww).ravel()
+        self.d_uv_data["DATE"] = np.array(dd).ravel().astype('float64')
+        self.d_uv_data["TIME"] = np.array(tt).ravel().astype('float64')
 
+        #print self.d_uv_data["DATE"]
+        #print self.d_uv_data["TIME"]
         #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
 
     def leda_set_value(self, key, value):
@@ -371,4 +412,42 @@ class LedaFits(InterFits):
         stand_west = atab[:, 2].astype('float')
         stand_elev = atab[:, 3].astype('float')
 
+    def remove_miriad_baselines(self):
+        """ Remove baseline data for all antennas with IDs > 255
 
+        Miriad-type UVFITS files use the convention
+            ant1*256+ant2 if ants < 255
+            ant1*2048+ant2+65536 if ants >255
+        The miriad convention screws up import into many reduction packages.
+        """
+
+        h2("Removing MIRIAD baselines")
+        bls = np.array(self.d_uv_data["BASELINE"])
+        #self.n_ant = self.n_ant - 1
+
+        max_bl = 255 * 256 + 255
+        ok_bls = bls < max_bl
+        #print ok_bls
+        for k in self.d_uv_data.keys():
+            try:
+                self.d_uv_data[k] = np.array(self.d_uv_data[k])
+                self.d_uv_data[k] = self.d_uv_data[k][ok_bls]
+                #print len(self.d_uv_data[k])
+            except TypeError:
+                print k
+                print self.d_uv_data[k]
+                raise
+
+        #for k in self.d_antenna.keys():
+        #    self.d_antenna[k] = self.d_antenna[k][0:256]
+        #    #    print len(self.d_antenna[k])
+
+        #for k in self.d_array_geometry.keys():
+        #    self.d_array_geometry[k] = self.d_array_geometry[k][0:256]
+        #    #    print len(self.d_array_geometry[k])
+
+        h2("Fixing NOPCAL (setting to zero)")
+        self.h_antenna["NOPCAL"] = 0
+
+        h2("Setting INTTIME to 8.53s")
+        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * INT_TIME

@@ -193,7 +193,7 @@ class InterFits(object):
 
         # Load basic metadata
         self.telescope = self.uvhead['TELESCOP'].strip()
-        self.instrument = self.uvhead['INSTRUME'].strip()
+        self.instrument = self.anthead['ARRNAM'].strip()
         self.source = self.uvhead['OBJECT'].strip()
         self.date_obs = self.uvhead['DATE-OBS'].strip()
         self.n_ant = self.antdata.shape[0]
@@ -254,6 +254,8 @@ class InterFits(object):
         # Load UV-DATA
         h2("Loading UV-data")
         self.h_uv_data['TELESCOP'] = self.telescope
+        self.h_uv_data['DATE-OBS'] = self.date_obs
+        self.h_uv_data['INSTRUME'] = self.instrument
         uv_datacols = ['UU', 'VV', 'WW', 'BASELINE', 'DATE']
         for k in uv_datacols: self.d_uv_data[k] = self.uvdata[k]
 
@@ -285,6 +287,7 @@ class InterFits(object):
                 raise
         else:
             self.d_uv_data['DATA'] = self.uvdata['DATA']
+
 
         # Best line in the history of indexing below
         # Note the 0:2 and *2 at the end is to not include weights
@@ -355,6 +358,7 @@ class InterFits(object):
             self.telescope = self.tbl_uv_data.header['TELESCOP'].strip()
             try:
                 self.date_obs = self.tbl_uv_data.header['DATE-OBS'].strip()
+                self.h_uv_data['DATE-OBS'] = self.date_obs
             except AttributeError:
                 self.date_obs = 0.0
         else:
@@ -441,6 +445,12 @@ class InterFits(object):
             for k in uv_datacols:
                 self.d_uv_data[k] = self.tbl_uv_data.data[k]
 
+            try:
+                self.d_uv_data["TIME"] = self.tbl_uv_data.data["TIME"]
+            except KeyError:
+                print "\tWARNING: TIME column does not exist."
+                raise
+
             self.d_uv_data["FLUX"] = self.d_uv_data["FLUX"].astype('float32')
 
             # Find stokes axis type and values
@@ -512,6 +522,27 @@ class InterFits(object):
         except IOError:
             print "Warning: Could not load UV_DATA table header"
 
+        try:
+            self.telescope  = self.h_uv_data['TELESCOP']
+        except KeyError:
+            print "Warning: Could not load TELESCOP from UV_DATA header"
+        try:
+            self.date_obs   = self.h_uv_data['DATE-OBS']
+        except KeyError:
+            print "Warning: Could not load DATE-OBS from UV_DATA header"
+        try:
+            s = self.d_source['SOURCE']
+            if type(s) is list:
+                s = str(s[0])
+            self.source     = s
+        except KeyError:
+            print "Warning: Could not load SOURCE from UV_DATA header"
+        try:
+            self.instrument = self.h_array_geometry['ARRNAM']
+        except KeyError:
+            print "Warning: Could not load ARRNAM from UV_DATA header"
+
+
     def readHdf5(self):
         """ TODO """
         raise Exception("HDF5 support not yet implemented.")
@@ -558,11 +589,13 @@ class InterFits(object):
         self.d_frequency["FREQID"]    = self.s2arr(1)
         self.d_frequency["BANDFREQ"]  = self.s2arr(0)
 
-        self.d_source["EQUINOX"]   = self.s2arr('J2000')
+        #self.d_source["EQUINOX"]   = self.s2arr('J2000')
         self.d_source["SOURCE"]    = self.s2arr('ZENITH')
         self.d_source["SOURCE_ID"] = self.s2arr(1)
-        self.d_source["VELDEF"]    = self.s2arr("RADIO")
-        self.d_source["VELTYP"]    = self.s2arr("GEOCENTR")
+        #self.d_source["VELDEF"]    = self.s2arr("RADIO")
+        #self.d_source["VELTYP"]    = self.s2arr("GEOCENTR")
+
+        self.h_uv_data["DATE-OBS"] = '2013-01-01T00:00:00.0'
 
     def generateFitsidiXml(self, xmlbase=None, filename_out=None):
         """ Generate XML file that encodes fitsidi structure 
@@ -649,7 +682,7 @@ class InterFits(object):
         dump_json(uvf.d_frequency, os.path.join(dirname_out, 'd_frequency.json'))
         dump_json(uvf.d_source, os.path.join(dirname_out, 'd_source.json'))
 
-    def exportFitsidi(self, filename_out, config_xml=None):
+    def exportFitsidi(self, filename_out, config_xml=None, verbose=False):
         """ Export data as FITS IDI 
         
         filename_out: str
@@ -671,23 +704,23 @@ class InterFits(object):
 
         h1('Creating Primary HDU')
         hdu_primary = make_primary(config=config_xml)
-        print hdu_primary.header.ascardlist()
+        if verbose: print hdu_primary.header.ascardlist()
 
         h1('\nCreating ARRAY_GEOMETRY')
         tbl_array_geometry = make_array_geometry(config=config_xml, num_rows=self.n_ant)
-        print tbl_array_geometry.header.ascardlist()
+        if verbose: print tbl_array_geometry.header.ascardlist()
 
         h1('\nCreating ANTENNA')
         tbl_antenna = make_antenna(config=config_xml, num_rows=self.n_ant)
-        print tbl_antenna.header.ascardlist()
+        if verbose: print tbl_antenna.header.ascardlist()
 
         h1('\nCreating FREQUENCY')
         tbl_frequency = make_frequency(config=config_xml, num_rows=1)
-        print tbl_frequency.header.ascardlist()
+        if verbose: print tbl_frequency.header.ascardlist()
 
         h1('\nCreating SOURCE')
         tbl_source = make_source(config=config_xml, num_rows=1)
-        print tbl_source.header.ascardlist()
+        if verbose: print tbl_source.header.ascardlist()
 
         h1('\nCreating UV_DATA')
         num_rows = self.d_uv_data['FLUX'].shape[0]
@@ -695,14 +728,21 @@ class InterFits(object):
         if type(uvd['BASELINE']) is list:
             uvd['BASELINE'] = np.array(uvd['BASELINE'])
 
+        try:
+            jtime = uvd['TIME']
+        except KeyError:
+            print "\t Warning: TIME column does not exist."
+            jtime = None
+
+
         # TODO: Fix time and date to julian date
         tbl_uv_data = make_uv_data(config=config_xml, num_rows=num_rows,
                                    uu_data=uvd['UU'], vv_data=uvd['VV'], ww_data=uvd['WW'],
-                                   date_data=uvd['DATE'], time_data=None, baseline_data=uvd['BASELINE'].astype('int32'),
-                                   source_data=uvd['SOURCE'], freqid_data=uvd['FREQID'], inttim_data=uvd['INTTIM'],
+                                   date_data=uvd['DATE'], time_data=jtime, baseline_data=uvd['BASELINE'].astype('int32'),
+                                   source_data=uvd['SOURCE'].astype('int32'), freqid_data=uvd['FREQID'].astype('int32'), inttim_data=uvd['INTTIM'],
                                    weights_data=None, flux_data=uvd['FLUX'], weights_col=False)
 
-        print tbl_uv_data.header.ascardlist()
+        if verbose: print tbl_uv_data.header.ascardlist()
 
         h1('Filling in data')
         h2("ARRAY_GEOMETRY")
@@ -742,7 +782,7 @@ class InterFits(object):
                     raise
         else:
             n_rows = len(self.d_source['SOURCE'])
-            print self.d_source
+            #print self.d_source
             for i in range(n_rows):
                 tbl_source.data['SOURCE_ID'][i] = i + 1
                 tbl_source.data['EQUINOX'][i] = 'J2000'
@@ -829,21 +869,6 @@ class InterFits(object):
         """ Run a series of diagnostics to test data validity """
         h1("Data verification")
         self.verify_baseline_order()
-
-    def remove_miriad_baselines(self):
-        """ Remove baseline data for all antennas with IDs > 255
-
-        Miriad-type UVFITS files use the convention
-            ant1*256+ant2 if ants < 255
-            ant1*2048+ant2+65536 if ants >255
-        The miriad convention screws up import into many reduction packages.
-        """
-
-        bls = self.d_uv_data["BASELINE"]
-        max_bl = 255 * 256 + 255
-        ok_bls = bls < max_bl
-        for k in self.d_uv_data.keys():
-            self.d_uv_data[k] = self.d_uv_data[k][ok_bls]
 
     def formatStokes(self):
         """ Return data as complex stokes vector """
