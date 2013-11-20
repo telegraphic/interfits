@@ -1,0 +1,47 @@
+#! /usr/bin/env python
+# encoding: utf-8
+"""
+leda_config.py
+==============
+
+This files stores configuration parameters and global variables that are required across
+the LEDA project. 
+"""
+
+import ephem, os
+
+########
+# PSR-DADA Settings
+########
+
+OFFSET_DELTA = 1151877120   # Bytes per dada file 
+INT_TIME     = 8.33333      # Integration time (s)
+N_INT        = 100          # Number integrations (?)
+
+########
+# Station location - OVRO
+########
+
+(latitude, longitude, elevation) = ('37.240391', '-118.2', 1184)
+
+ovro      = ephem.Observer()
+ovro.lon  = longitude
+ovro.lat  = latitude
+ovro.elev = elevation
+
+########
+# LedaFits defaults
+#######
+CH_WIDTH          = 24e3
+SUB_BW            = 2.616e6
+TELESCOP          = "LWA-OVRO"
+ARRNAM            = "LEDA-512"
+
+# Default files to load to fill in FITS-IDI
+fileroot = os.path.abspath(os.path.dirname(__file__))
+json_h_array_geometry  =  os.path.join(fileroot, 'config/leda/h_array_geometry.json')
+json_d_array_geometry  =  os.path.join(fileroot, 'config/leda/d_array_geometry.json')
+json_h_antenna         =  os.path.join(fileroot, 'config/leda/h_antenna.json')
+json_d_antenna         =  os.path.join(fileroot, 'config/leda/d_antenna.json')
+
+json_uvw_coordinates   =  os.path.join(fileroot, 'config/leda/z_uvw.json')
