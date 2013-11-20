@@ -294,6 +294,7 @@ class LedaFits(InterFits):
 
         self.obs_code = ''
         self.correlator = d.header["INSTRUMENT"]
+        self.instrument = d.header["INSTRUMENT"]
         self.telescope  = d.header["TELESCOPE"]
         self.date_obs   = d.header["UTC_START"]
         self.h_params["NSTOKES"] = 4
