@@ -504,7 +504,7 @@ class InterFitsGui(QtGui.QWidget):
 
         #bls = bls.tolist()
 
-        bl_ids = self.uv.get_baseline_ids(ref_ant)
+        bl_ids = self.uv.search_baselines(ref_ant)
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
         #x_data    = self.uv.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes
@@ -561,7 +561,7 @@ class InterFitsGui(QtGui.QWidget):
 
         # Extract the relevant baselines using a truth array
         # bls = bls.tolist()
-        bl_ids = [256*i + i for i in range(1,self.uv.n_ant+1)]
+        bl_ids = [256*i + i for i in range(1, n_rows * n_cols + 1)]
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
         #print self.uv.d_uv_data['DATA'].shape

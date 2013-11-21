@@ -8,7 +8,9 @@ This files stores configuration parameters and global variables that are require
 the LEDA project. 
 """
 
-import ephem, os
+import os
+import ephem
+
 
 ########
 # PSR-DADA Settings
@@ -39,9 +41,13 @@ ARRNAM            = "LEDA-512"
 
 # Default files to load to fill in FITS-IDI
 fileroot = os.path.abspath(os.path.dirname(__file__))
-json_h_array_geometry  =  os.path.join(fileroot, 'config/leda/h_array_geometry.json')
-json_d_array_geometry  =  os.path.join(fileroot, 'config/leda/d_array_geometry.json')
-json_h_antenna         =  os.path.join(fileroot, 'config/leda/h_antenna.json')
-json_d_antenna         =  os.path.join(fileroot, 'config/leda/d_antenna.json')
+json_h_array_geometry  = os.path.join(fileroot, 'config/leda/h_array_geometry.json')
+json_d_array_geometry  = os.path.join(fileroot, 'config/leda/d_array_geometry.json')
+json_h_antenna         = os.path.join(fileroot, 'config/leda/h_antenna.json')
+json_d_antenna         = os.path.join(fileroot, 'config/leda/d_antenna.json')
+json_uvw_coordinates   = os.path.join(fileroot, 'config/leda/z_uvw.json')
 
-json_uvw_coordinates   =  os.path.join(fileroot, 'config/leda/z_uvw.json')
+# A few sources to phase to
+src_names = ['CYG', 'CAS', 'TAU', 'VIR']
+src_ras   = [299.86791, 350.84583, 83.63333, 187.705833]
+src_decs  = [40.733888, 58.810833, 22.01444, 12.39111]

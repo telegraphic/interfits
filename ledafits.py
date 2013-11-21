@@ -9,7 +9,10 @@ L-files and DADA files.
 """
 
 import time
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
+import ephem
+
 from interfits import *
 from lib import dada, uvw
 import leda_config
@@ -343,7 +346,29 @@ class LedaFits(InterFits):
         self.d_array_geometry = load_json(leda_config.json_d_array_geometry)
         self.h_antenna        = load_json(leda_config.json_h_antenna)     
         self.d_antenna        = load_json(leda_config.json_d_antenna)      
-        
+
+    def computeSiderealTime(self, ts=None):
+        """ Computes the LST for a given timestamp.
+
+        ts (float): Timestamp to use. If none is given, DATE-OBS value
+                    is used in lieu.
+
+        returns LST in degrees
+        """
+
+        h2("Computing LST from UTC")
+        if ts is not None:
+            dt_utc = datetime.utcfromtimestamp(ts)
+        else:
+            dt_utc = datetime.strptime(self.date_obs, "%Y-%m-%dT%H:%M:%S")
+        ov = leda_config.ovro
+        ov.date = dt_utc
+        lst, lst_deg = ov.sidereal_time(), ov.sidereal_time() / 2 / np.pi * 360
+        print "UTC: %s"%dt_utc
+        print "LST: %s (%s)"%(lst, lst_deg)
+        return lst_deg
+
+
 
     def generateBaselineIds(self, n_ant):
         """ Generate a list of unique baseline IDs and antenna pairs
@@ -365,20 +390,64 @@ class LedaFits(InterFits):
                     bls.append(bl_id)
         return bls, ant_arr
 
-    def generateUVW(self, conjugate=False, H=0, d=float(leda_config.latitude), use_stored=False):
+    def generateUVW(self, src='ZEN', update_src=True, conjugate=False, use_stored=False):
         """ Generate UVW coordinates based on timestamps and array geometry
 
-        Uses pyEphem observer + lib.uvw for computations
-        
-        H (float): Hour angle, in degrees. Defaults to 0
-        d (float): Declination, in degrees. Defaults to LWA-OVRO declination.
+        Updates UVW coordinates to phase to a given source. Uses pyEphem observer
+        along with methods is lib.uvw for computations
+
+        src (str): Source to phase to. Sources are three capital letters:
+            ZEN: Zenith (RA will be computed from timestamps)
+            CYG: Cygnus A
+            CAS: Cassiopeia A
+            TAU: Taurus A
+            VIR: Virgo A
+
         use_stored (bool): If True, uses stored UVW coordinates (does not recompute).
-                           this is faster than recomputing. 
+                           this is faster than recomputing.
+        update_src (bool): Default True, update the SOURCE table.
+        conjugate (bool): Conjuagte UVW coordinates? Do this if things are flipped in map.
         """
-        
+
+        h1("Generating UVW coordinates")
+        # First, compute LST
+        tt_source = time.strptime(self.date_obs, "%Y-%m-%dT%H:%M:%S")
+        ts_source = calendar.timegm(tt_source)
+        lst_deg = self.computeSiderealTime(ts_source)
+
+        # Find HA and DEC of source
+        if src.upper() == 'ZEN':
+            H, d = 0, float(leda_config.latitude)
+            dec_deg  = d
+            ra_deg   = lst_deg
+        else:
+            try:
+                src_names = leda_config.src_names
+                src_ras   = leda_config.src_ras
+                src_decs  = leda_config.src_decs
+                idx = src_names.index(src.upper())
+                h2("Phasing to %s"%src_names[idx])
+                ra_deg, dec_deg = src_ras[idx], src_decs[idx]
+
+                # Now we have the RA and DEC, need to convert into hour angle
+                H = np.deg2rad(lst_deg - ra_deg)
+                d = np.deg2rad(dec_deg)
+
+            except ValueError:
+                print "Error: Cannot phase to %s"%src
+                print "Choose one of: ZEN, ",
+                for src in src_names:
+                    print "%s, "%src,
+                print "\n"
+                raise
+
+        print "LST:        %s"%lst_deg
+        print "Source RA:  %s"%ra_deg
+        print "Source DEC: %s"%dec_deg
+        print "HA:         %s"%np.rad2deg(H)
 
         # Recreate list of baselines
-        h1("Generating UVW coordinates")
+        h2("Computing UVW coordinates for %s"%src)
         bl_ids, ant_arr = self.generateBaselineIds(self.n_ant)
         n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
         
@@ -399,7 +468,6 @@ class LedaFits(InterFits):
             uvw_arr = np.array(uvw_list)
             
             # Fill with data
-            h2("Computing UV_DATA coordinates")
             uu, vv, ww = [], [], []
             for ii in range(n_iters):
                 uu.append(uvw_arr[:, 0])
@@ -413,18 +481,53 @@ class LedaFits(InterFits):
         dd, tt = [], []        
         for ii in range(n_iters):
             jd, jt = uvw.convertToJulianTuple(self.date_obs)
-            jds = [jd for ii in range(len(ant_arr))]
-            jts = [jt for ii in range(len(ant_arr))]
+            tdelta = leda_config.INT_TIME * ii
+            jds = [jd for jj in range(len(ant_arr))]
+            jts = [jt + tdelta for jj in range(len(ant_arr))]
             dd.append(jds)
             tt.append(jts)
-            
-        self.d_uv_data["DATE"] = np.array(dd).ravel().astype('float64')
-        self.d_uv_data["TIME"] = np.array(tt).ravel().astype('float64')
+
+        self.d_uv_data["DATE"] = np.array(dd, dtype='float64').ravel()
+        self.d_uv_data["TIME"] = np.array(tt, dtype='float64').ravel()
+
+        if update_src:
+            h2("Updating SOURCE table")
+            self.d_source["SOURCE"] = self.s2arr(src)
+            self.d_source["RAEPO"]  = self.s2arr(ra_deg)
+            self.d_source["DECEPO"] = self.s2arr(dec_deg)
+
+
         
         #print self.d_uv_data["DATE"]
         #print self.d_uv_data["TIME"]
         #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
-        
+
+    def phaseToSrc(self, src_name):
+        """ Phase to a given source
+
+        src_name (str): Identifier of source to phase to, e.g. CYG, ZEN
+        """
+
+
+        try:
+            if src_name.upper() == 'ZEN':
+                self.generateUVW()
+            else:
+                src_names = leda_config.src_names
+                src_ras   = leda_config.src_ras
+                src_decs  = leda_config.src_decs
+                idx = src_names.index(src_name)
+
+                h1("Phasing to %s"%src_names[idx])
+
+                return src_ras[idx], src_decs[idx]
+        except ValueError:
+            print "Error: Cannot phase to %s"%src_name
+            print "Choose one of CYG, CAS, TAU, VIR, ZEN"
+            raise
+
+
+
     def dumpUVW(self, filename):
         """ Dump precomputed UVW coordinates to file 
         
@@ -484,7 +587,9 @@ class LedaFits(InterFits):
 
         h1("Removing MIRIAD baselines")
         bls = np.array(self.d_uv_data["BASELINE"])
-        #self.n_ant = self.n_ant - 1
+
+        if self.n_ant > 255:
+            self.n_ant = 255
 
         max_bl = 255 * 256 + 255
         ok_bls = bls < max_bl
@@ -498,13 +603,18 @@ class LedaFits(InterFits):
                 print k
                 print self.d_uv_data[k]
                 raise
+            except ValueError:
+                print k
+                print len(self.d_uv_data[k]),
+                print len(ok_bls)
+                raise
 
         #for k in self.d_antenna.keys():
-        #    self.d_antenna[k] = self.d_antenna[k][0:256]
+        #    self.d_antenna[k] = self.d_antenna[k][0:self.n_ant]
         #    #    print len(self.d_antenna[k])
 
         #for k in self.d_array_geometry.keys():
-        #    self.d_array_geometry[k] = self.d_array_geometry[k][0:256]
+        #    self.d_array_geometry[k] = self.d_array_geometry[k][0::self.n_ant]
         #    #    print len(self.d_array_geometry[k])
 
         h2("Fixing NOPCAL (setting to zero)")

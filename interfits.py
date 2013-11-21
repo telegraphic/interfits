@@ -11,6 +11,7 @@ Currently reads UV-FITS and FITS-IDI.
 import sys
 import os
 import re
+from datetime import datetime
 
 import pyfits as pf
 import numpy as np
@@ -41,6 +42,9 @@ def h2(headstr):
     """ Print a string as a header """
     print '\n###  ', headstr
 
+def h3(headstr):
+    """ Print a string as a 3rd level header """
+    print "\t", headstr
 
 class VerificationError(Exception):
     """ Custom data verification exception """
@@ -685,15 +689,14 @@ class InterFits(object):
     def exportFitsidi(self, filename_out, config_xml=None, verbose=False):
         """ Export data as FITS IDI 
         
-        filename_out: str
-            output filename
-        config_xml: str
-        config_xml: str
-            path to config file
+        filename_out (str): output filename
+        config_xml (str): path to config file
         
         """
 
-        h1('Generating FITS-IDI XML schema')
+        h1("Exporting to FITS-IDI")
+
+        h2('Generating FITS-IDI XML schema')
         if config_xml is None:
             dirname, this_file = os.path.split(os.path.abspath(__file__))
             config_xml = os.path.join(dirname, 'config/config.xml')
@@ -702,27 +705,27 @@ class InterFits(object):
         config_xml = xmlfile
 
 
-        h1('Creating Primary HDU')
+        h2('Creating Primary HDU')
         hdu_primary = make_primary(config=config_xml)
         if verbose: print hdu_primary.header.ascardlist()
 
-        h1('\nCreating ARRAY_GEOMETRY')
+        h2('Creating ARRAY_GEOMETRY')
         tbl_array_geometry = make_array_geometry(config=config_xml, num_rows=self.n_ant)
         if verbose: print tbl_array_geometry.header.ascardlist()
 
-        h1('\nCreating ANTENNA')
+        h2('Creating ANTENNA')
         tbl_antenna = make_antenna(config=config_xml, num_rows=self.n_ant)
         if verbose: print tbl_antenna.header.ascardlist()
 
-        h1('\nCreating FREQUENCY')
+        h2('Creating FREQUENCY')
         tbl_frequency = make_frequency(config=config_xml, num_rows=1)
         if verbose: print tbl_frequency.header.ascardlist()
 
-        h1('\nCreating SOURCE')
+        h2('Creating SOURCE')
         tbl_source = make_source(config=config_xml, num_rows=1)
         if verbose: print tbl_source.header.ascardlist()
 
-        h1('\nCreating UV_DATA')
+        h2('Creating UV_DATA')
         num_rows = self.d_uv_data['FLUX'].shape[0]
         uvd = self.d_uv_data
         if type(uvd['BASELINE']) is list:
@@ -744,13 +747,13 @@ class InterFits(object):
 
         if verbose: print tbl_uv_data.header.ascardlist()
 
-        h1('Filling in data')
-        h2("ARRAY_GEOMETRY")
+        h2('Filling in data')
+        h3("ARRAY_GEOMETRY")
         for i in range(self.n_ant):
             for k in ['ANNAME', 'STABXYZ', 'NOSTA', 'MNTSTA', 'STAXOF']:
                 tbl_array_geometry.data[k][i] = self.d_array_geometry[k][i]
 
-        h2("ANTENNA")
+        h3("ANTENNA")
         for i in range(self.n_ant):
             # TODO: 'POLCALB' and POLCALA               
             for k in ['POLTYA', 'POLAA', 'POLTYB', 'POLAB']:
@@ -764,13 +767,13 @@ class InterFits(object):
                 except:
                     print "Warning: keyword error: %s" % k
 
-        h2("FREQUENCY")
+        h3("FREQUENCY")
         tbl_frequency.data["FREQID"][0] = 1
         tbl_frequency.data['BANDFREQ'][0] = 0
         tbl_frequency.data['CH_WIDTH'][0] = self.d_frequency['CH_WIDTH']
         tbl_frequency.data['TOTAL_BANDWIDTH'][0] = self.d_frequency['TOTAL_BANDWIDTH']
 
-        h2("SOURCE")
+        h3("SOURCE")
         if type(self.d_source['SOURCE']) == str:
             for k in ['SOURCE', 'RAEPO', 'DECEPO']:
                 try:
@@ -792,8 +795,8 @@ class InterFits(object):
                     except:
                         print "Warning: keyword error: %s" % k
 
-        h2("UV_DATA")
-        print "Pre-filled"
+        h3("UV_DATA")
+        h3("(Pre-filled)")
         # NOTE: This is now superfluous, thanks to the make_uv_data call above
         #for i in range(self.d_uv_data['DATA'].shape[0]):
         #    LinePrint("Row %i of %i"%(i+1, self.d_uv_data['DATA'].shape[0]))
@@ -804,6 +807,12 @@ class InterFits(object):
         #        except:
         #            raise
 
+        # Add history and comments to header
+        hdu_primary.header.add_comment("FITS-IDI: FITS Interferometry Data Interchange Convention")
+        hdu_primary.header.add_comment("defined at http://fits.gsfc.nasa.gov/registry/fitsidi.html")
+        now = datetime.now()
+        datestr = now.strftime("Interfits: File created %Y-%m-%dT%H:%M:%S")
+        hdu_primary.header.add_history(datestr)
         h1('Creating HDU list')
         hdulist = pf.HDUList(
             [hdu_primary,
@@ -903,3 +912,34 @@ class InterFits(object):
         else:
             bl_id = ant1 * 256 + ant2
         return bl_id
+
+    def search_baselines(self, ref_ant, triangle='upper'):
+        """ Retrieve baseline ids that contain a given antenna
+
+        ref_ant (int):  Antenna of interest
+        triangle (str): Defaults to upper matrix order (lower not supported yet)
+
+        returns: a list of all matching baseline IDs
+        """
+        bl_ids = []
+
+        if triangle =='upper':
+            # Get values in array
+            if ref_ant > 1:
+                for i in range(1, ref_ant):
+                    if i > 255:
+                        bl_ids.append(i * 2048 + ref_ant + 65536)
+                    else:
+                        bl_ids.append(i * 256 + ref_ant)
+
+            # Get row
+            if ref_ant < 255:
+                bl_min, bl_max = (256 * ref_ant, 256 * ref_ant + self.n_ant)
+            else:
+                bl_min, bl_max = (2048 * ref_ant, 2048 * ref_ant + self.n_ant + 65536)
+            for b in range(bl_min, bl_max+1): bl_ids.append(b)
+
+            return bl_ids
+        else:
+            print "Lower triangle not supported yet"
+            raise
