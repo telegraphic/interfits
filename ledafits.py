@@ -12,14 +12,17 @@ import time
 from datetime import datetime
 from interfits import *
 from lib import dada, uvw
+import leda_config
 
-
-# TODO: Load this from config file
-OFFSET_DELTA, INT_TIME, N_INT = 1044480000, 8.53333, 100
+# Load globals from config file
+OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT
 
 class LedaFits(InterFits):
-    """ LEDA extension of InterFits class """
-
+    """ LEDA extension of InterFits class 
+    
+    This adds ability to read LA, LC and dada files, and adds helper functions
+    for computing UVW coordinates, generating timestamps, and computing zenith RA/DEC.
+    """
 
     def readFile(self, filename):
         # Check what kind of file to load
@@ -287,24 +290,26 @@ class LedaFits(InterFits):
         self.stokes_vals = [-5, -6, -7, -8]
         self.readFitsidi(from_file=False, load_uv_data=False)
 
-
         h2("Populating interfits dictionaries")
         self.setDefaults(n_uv_rows=len(bl_lower))
-
-
         self.obs_code = ''
         self.correlator = d.header["INSTRUMENT"]
         self.instrument = d.header["INSTRUMENT"]
         self.telescope  = d.header["TELESCOPE"]
-        self.date_obs   = d.header["UTC_START"]
+        
+        # Convert UTC_START into dateTtime format
+        dd_obs = d.header["UTC_START"][0:10]
+        tt_obs = d.header["UTC_START"][11:]
+        date_obs = dd_obs + 'T' + tt_obs
+        
+        self.date_obs   = date_obs
         self.h_params["NSTOKES"] = 4
         self.h_params["NBAND"]   = 1
         self.h_params["NCHAN"]   = int(d.header["NCHAN"])
         self.h_common["REF_FREQ"] = float(d.header["CFREQ"]) * 1e6
         self.h_common["CHAN_BW"]  = float(d.header["BW"]) * 1e6 / self.h_params["NCHAN"]
         self.h_common["REF_PIXL"] = self.h_params["NCHAN"] / 2
-        self.h_common["RDATE"]    = d.header["UTC_START"][0:10]  # Ignore time
-
+        self.h_common["RDATE"]    = dd_obs  # Ignore time
 
         self.d_frequency["CH_WIDTH"]  = self.h_common["CHAN_BW"]
         self.d_frequency["TOTAL_BANDWIDTH"] = float(d.header["BW"]) * 1e6
@@ -319,18 +324,33 @@ class LedaFits(InterFits):
         print self.h_common
         print self.h_params
 
-    def setDefaultsLeda(self, n_uv_rows):
+    def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
+        if n_uv_rows is None:
+            n_uv_rows = len(self.d_uv_data["BASELINE"])
+            
         self.setDefaults(n_uv_rows)
 
-        self.d_frequency["CH_WIDTH"]        = self.s2arr(24e3)
-        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(2.616e6)
-        self.h_uv_data["TELESCOP"]          = "LWA-OVRO"
-        self.h_array_geometry["ARRNAM"]     = "LEDA-512"
+        self.d_frequency["CH_WIDTH"]        = self.s2arr(leda_config.CH_WIDTH)
+        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(leda_config.SUB_BW)
+        self.h_uv_data["TELESCOP"]          = leda_config.TELESCOP
+        self.h_array_geometry["ARRNAM"]     = leda_config.ARRNAM
+    
+    def loadAntArr(self):
+        """ Loads ANTENNA and ARRAY_GEOMETRY tables as set in leda_config """
+        h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
+        self.h_array_geometry = load_json(leda_config.json_h_array_geometry)
+        self.d_array_geometry = load_json(leda_config.json_d_array_geometry)
+        self.h_antenna        = load_json(leda_config.json_h_antenna)     
+        self.d_antenna        = load_json(leda_config.json_d_antenna)      
+        
 
     def generateBaselineIds(self, n_ant):
         """ Generate a list of unique baseline IDs and antenna pairs
-
+        
+        This uses the MIRIAD definition for >256 antennas:
+        bl_id = 2048*ant1 + ant2 + 65536
+        
         n_ant: number of antennas in the array
         """
         bls, ant_arr = [], []
@@ -345,56 +365,96 @@ class LedaFits(InterFits):
                     bls.append(bl_id)
         return bls, ant_arr
 
-    def generateUVW(self, conjugate=False):
+    def generateUVW(self, conjugate=False, H=0, d=float(leda_config.latitude), use_stored=False):
         """ Generate UVW coordinates based on timestamps and array geometry
 
         Uses pyEphem observer + lib.uvw for computations
+        
+        H (float): Hour angle, in degrees. Defaults to 0
+        d (float): Declination, in degrees. Defaults to LWA-OVRO declination.
+        use_stored (bool): If True, uses stored UVW coordinates (does not recompute).
+                           this is faster than recomputing. 
         """
-        # TODO: Move this to config file, support phasing
-        # Manually set Hour angle and declination to phase to zenith
-        H, d = 0, 37.240391
+        
 
         # Recreate list of baselines
         h1("Generating UVW coordinates")
-        n_ant = len(self.d_array_geometry['ANNAME'])
-        bl_ids, ant_arr = self.generateBaselineIds(n_ant)
-        xyz = self.d_array_geometry['STABXYZ']
-
-        # Compute baseline vectors
-        bl_veclist, uvw_list = [], []
-        for ant_pair in ant_arr:
-            ii, jj = ant_pair[0] - 1, ant_pair[1] - 1
-            bl_vec = xyz[ii] - xyz[jj]
-            bl_veclist.append(bl_vec)
-            uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate))
-        uvw_arr = np.array(uvw_list)
-
-        h2("Generating timestamps")
-        jd, jt = uvw.convertToJulianTuple(time.time())
-        jds = [jd for ii in range(len(ant_arr))]
-        jts = [jt for ii in range(len(ant_arr))]
-
-        # Fill with data
-        h2("Filling UV_DATA coordinates")
-        uu, vv, ww, dd, tt = [], [], [],  [], []
+        bl_ids, ant_arr = self.generateBaselineIds(self.n_ant)
         n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
+        
+        if use_stored:
+            h2("Loading stored values")
+            self.loadUVW()
+        else:
+            n_ant = len(self.d_array_geometry['ANNAME'])
+            xyz   = self.d_array_geometry['STABXYZ']
+            
+            # Compute baseline vectors
+            bl_veclist, uvw_list = [], []
+            for ant_pair in ant_arr:
+                ii, jj = ant_pair[0] - 1, ant_pair[1] - 1
+                bl_vec = xyz[ii] - xyz[jj]
+                bl_veclist.append(bl_vec)
+                uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate))
+            uvw_arr = np.array(uvw_list)
+            
+            # Fill with data
+            h2("Computing UV_DATA coordinates")
+            uu, vv, ww = [], [], []
+            for ii in range(n_iters):
+                uu.append(uvw_arr[:, 0])
+                vv.append(uvw_arr[:, 1])
+                ww.append(uvw_arr[:, 2])
+            self.d_uv_data["UU"]   = np.array(uu).ravel()
+            self.d_uv_data["VV"]   = np.array(vv).ravel()
+            self.d_uv_data["WW"]   = np.array(ww).ravel()
+            
+        h2("Generating timestamps")
+        dd, tt = [], []        
         for ii in range(n_iters):
-            uu.append(uvw_arr[:, 0])
-            vv.append(uvw_arr[:, 1])
-            ww.append(uvw_arr[:, 2])
+            jd, jt = uvw.convertToJulianTuple(self.date_obs)
+            jds = [jd for ii in range(len(ant_arr))]
+            jts = [jt for ii in range(len(ant_arr))]
             dd.append(jds)
             tt.append(jts)
-
-        self.d_uv_data["UU"]   = np.array(uu).ravel()
-        self.d_uv_data["VV"]   = np.array(vv).ravel()
-        self.d_uv_data["WW"]   = np.array(ww).ravel()
+            
         self.d_uv_data["DATE"] = np.array(dd).ravel().astype('float64')
         self.d_uv_data["TIME"] = np.array(tt).ravel().astype('float64')
-
+        
         #print self.d_uv_data["DATE"]
         #print self.d_uv_data["TIME"]
         #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
-
+        
+    def dumpUVW(self, filename):
+        """ Dump precomputed UVW coordinates to file 
+        
+        filename (str): name of output file (.json format)
+        """
+        d ={}
+        d["UU"]       = self.d_uv_data["UU"]
+        d["VV"]       = self.d_uv_data["VV"]
+        d["WW"]       = self.d_uv_data["WW"]
+        d["BASELINE"] = self.d_uv_data["BASELINE"]
+        
+        h2("Dumping UVW coords to %s"%filename)
+        dump_json(d, filename)
+    
+    def loadUVW(self, filename=None):
+        """ Load precomputed UVW coordinates from file
+        
+        filename (str): name of input file. If not set, uses default
+                        from leda_config file.
+        """
+        
+        h2("Loading UVW coordinates from file")
+        if not filename:
+            filename = leda_config.json_uvw_coordinates
+        d = load_json(filename)
+        self.d_uv_data["UU"]       = d["UU"]      
+        self.d_uv_data["VV"]       = d["VV"]      
+        self.d_uv_data["WW"]       = d["WW"]      
+        self.d_uv_data["BASELINE"] = d["BASELINE"]
+    
     def leda_set_value(self, key, value):
         """ Set values which are commonly incorrect from uvfits writer """
 
@@ -422,7 +482,7 @@ class LedaFits(InterFits):
         The miriad convention screws up import into many reduction packages.
         """
 
-        h2("Removing MIRIAD baselines")
+        h1("Removing MIRIAD baselines")
         bls = np.array(self.d_uv_data["BASELINE"])
         #self.n_ant = self.n_ant - 1
 
@@ -450,5 +510,5 @@ class LedaFits(InterFits):
         h2("Fixing NOPCAL (setting to zero)")
         self.h_antenna["NOPCAL"] = 0
 
-        h2("Setting INTTIME to 8.53s")
+        h2("Setting INTTIME to %s"%INT_TIME)
         self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * INT_TIME

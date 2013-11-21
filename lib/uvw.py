@@ -11,6 +11,8 @@ encoder cannot handle numpy arrays and will chuck a hissy-fit, hence these helpe
 import time
 import ephem
 import numpy as np
+import time, calendar
+from datetime import datetime
 
 LIGHT_SPEED = 299792458 # From Google
 
@@ -103,14 +105,33 @@ def convertToJulianTuple(timestamp):
 
     FITS-IDI requires DATE parameter is set to Julian date @ midnight. TIME is
     then indexed against this DATE.
+    
+    timestamp (float): timestamp of type 'float' is preferred, but this should
+                       handle time tuples, strings and datetime objects too.
     """
-
+    
+    # Figure out exactly what type of timestamp we've got.
+    if type(timestamp) in (str, unicode):
+        tt = time.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+        ts = calendar.timegm(tt)
+    elif type(timestamp) is float:
+        ts = timestamp
+    elif type(timestamp) is tuple:
+        ts = calendar.timegm(timestamp)
+    elif type(timestamp) is type(datetime.now):
+        date_str = timestamp.strftime("%Y-%m-%dT%H:%M:%S")
+        tt = time.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+        ts = calendar.timegm(tt)
+    else:
+        print type(timestamp)
+        raise TypeError
+        
     # DATE is julian date at midnight that day
     # TIME is in DAYS since midnight
-    julian = ephem.julian_date(time.gmtime(timestamp)[:6])
+    julian = ephem.julian_date(time.gmtime(ts)[:6])
     # Ephem returns julian date at NOON, we need at MIDNIGHT
     julian_midnight = int(julian) - 0.5
 
-    time_elapsed = ephem.julian_date(time.gmtime(timestamp)[:6]) - julian_midnight
+    time_elapsed = ephem.julian_date(time.gmtime(ts)[:6]) - julian_midnight
 
     return julian_midnight, time_elapsed
