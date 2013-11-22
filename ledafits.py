@@ -20,6 +20,12 @@ import leda_config
 # Load globals from config file
 OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT_PER_FILE 
 
+class HeaderDataUnit(object):
+    """ Very basic object with header and data units """
+    def __init__(self, header, data):
+        self.header = header
+        self.data   = data
+
 class LedaFits(InterFits):
     """ LEDA extension of InterFits class 
     
@@ -28,8 +34,17 @@ class LedaFits(InterFits):
     """
 
     def readFile(self, filename):
+        """ Check file type, and load corresponding
+
+        filename (str): name of file. Alternatively, if a psrdada header dictionary
+                        is passed, data will be loaded from shared memory.
+        """
         # Check what kind of file to load
-        if filename:
+        if type(file) is dict:
+          matched = True
+          self._readFile('lfile')
+
+        elif filename:
             matched = False
             regex = '([0-9A-Za-z-_]+).uvfits'
             match = re.search(regex, filename)
@@ -224,21 +239,21 @@ class LedaFits(InterFits):
         self.source    = self.d_source["SOURCE"][0]
 
 
-    def readDada(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4, xmlbase=None):
-        """ Read a LEDA DADA file
+    def readDada(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+        """ Read a LEDA DADA file.
+
+        header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
+                            loading data from file, data will be loaded from data_arr
+        data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
         """
 
-        h2("Loading visibility data")
-        d = dada.DadaSubBand(self.filename)
-        vis = d.data
-        #print d.header
-        print vis.shape
-
-        # Need to convert into real & imag
-        # Not a major performance hit as these are super fast.
-        re_vis = np.real(vis)
-        im_vis = np.imag(vis)
-        # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
+        if header_dict and data_arr:
+            h2("Loading from shared memory")
+            d = HeaderDataUnit(header_dict, data_arr)
+            flux = data_arr
+        else:
+            h2("Loading visibility data")
+            d = dada.DadaSubBand(self.filename)
 
         h2("Generating baseline IDs")
         bls, ant_arr = self.generateBaselineIds(n_ant)
@@ -246,21 +261,29 @@ class LedaFits(InterFits):
         for dd in range(vis.shape[0]):
             bl_lower += bls
 
-        h2("Converting visibilities to FLUX columns")
-        flux = np.zeros([len(bl_lower), n_chans * n_stk * 2])
-        for ii in range(len(bl_lower)):
-            ant1, ant2 = ant_arr[ii]
-            ant1, ant2 = ant1 - 1, ant2 - 1
-            re_xx = re_vis[0, ant1, ant2, :, 0, 0]
-            re_yy = re_vis[0, ant1, ant2, :, 0, 1]
-            re_xy = re_vis[0, ant1, ant2, :, 1, 0]
-            re_yx = re_vis[0, ant1, ant2, :, 1, 1]
-            im_xx = im_vis[0, ant1, ant2, :, 0, 0]
-            im_yy = im_vis[0, ant1, ant2, :, 0, 1]
-            im_xy = im_vis[0, ant1, ant2, :, 1, 0]
-            im_yx = im_vis[0, ant1, ant2, :, 1, 1]
-            flux[ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
-        #print flux.shape
+        if not header_dict:
+            h2("Converting visibilities to FLUX columns")
+            # Need to convert into real & imag
+            # Not a major performance hit as these are super fast.
+            vis    = d.data
+            re_vis = np.real(vis)
+            im_vis = np.imag(vis)
+            # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
+            flux = np.zeros([len(bl_lower), n_chans * n_stk * 2])
+            for ii in range(len(bl_lower)):
+                ant1, ant2 = ant_arr[ii]
+                ant1, ant2 = ant1 - 1, ant2 - 1
+                re_xx = re_vis[0, ant1, ant2, :, 0, 0]
+                re_yy = re_vis[0, ant1, ant2, :, 0, 1]
+                re_xy = re_vis[0, ant1, ant2, :, 1, 0]
+                re_yx = re_vis[0, ant1, ant2, :, 1, 1]
+                im_xx = im_vis[0, ant1, ant2, :, 0, 0]
+                im_yy = im_vis[0, ant1, ant2, :, 0, 1]
+                im_xy = im_vis[0, ant1, ant2, :, 1, 0]
+                im_yx = im_vis[0, ant1, ant2, :, 1, 1]
+                flux[ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
+            #print flux.shape
+
         self.d_uv_data["BASELINE"] = bl_lower
         self.d_uv_data["FLUX"] = flux
 
@@ -270,11 +293,11 @@ class LedaFits(InterFits):
             xmlbase = os.path.join(dirname, 'config/config.xml')
         self.xmlData = etree.parse(xmlbase)
 
-        hdu_primary = make_primary(config=self.xmlData)
+        hdu_primary        = make_primary(config=self.xmlData)
         tbl_array_geometry = make_array_geometry(config=self.xmlData, num_rows=n_ant)
-        tbl_antenna = make_antenna(config=self.xmlData, num_rows=n_ant)
-        tbl_frequency = make_frequency(config=self.xmlData, num_rows=1)
-        tbl_source = make_source(config=self.xmlData, num_rows=1)
+        tbl_antenna        = make_antenna(config=self.xmlData, num_rows=n_ant)
+        tbl_frequency      = make_frequency(config=self.xmlData, num_rows=1)
+        tbl_source         = make_source(config=self.xmlData, num_rows=1)
 
         #h1('Creating HDU list')
         hdulist = pf.HDUList(
