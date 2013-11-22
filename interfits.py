@@ -16,6 +16,7 @@ from datetime import datetime
 import pyfits as pf
 import numpy as np
 from lxml import etree
+import h5py
 
 from lib.pyFitsidi import *
 from lib.json_numpy import *
@@ -548,9 +549,61 @@ class InterFits(object):
 
 
     def readHdf5(self):
-        """ TODO """
-        raise Exception("HDF5 support not yet implemented.")
+        """ Read data from HDF5 file. """
+        h1("Reading HDF5 file %s"%self.filename)
+        self.hdf = h5py.File(self.filename, "r")
+        try:
+            ifds = [self.h_antenna, self.h_source, self.h_array_geometry, self.h_frequency, self.h_uv_data,
+                    self.d_antenna, self.d_source, self.d_array_geometry, self.d_frequency, self.d_uv_data,
+                    self.h_common, self.h_params]
 
+            ifd_names = ["h_antenna", "h_source", "h_array_geometry", "h_frequency", "h_uv_data",
+                         "d_antenna", "d_source", "d_array_geometry", "d_frequency", "d_uv_data",
+                         "h_common", "h_params"]
+
+            for ii in range(len(ifds)):
+                ifd      = ifds[ii]
+                ifd_name = ifd_names[ii]
+
+                h2("Reading %s"%ifd_name)
+                h5d = self.hdf[ifd_name]
+                print h5d
+                for key in h5d.keys():
+                    if ifd_name.startswith("h_"):
+                        # Convert back to native types from numpy types
+                        int_types   = type(np.int64(1)), type(np.int32(1))
+                        float_types = type(np.float64(1)), type(np.float32(1))
+                        str_types   = type(np.string_("hi")), type(np.unicode_("hi"))
+
+                        if type(h5d[key][0]) in int_types:
+                            #print "INT"
+                            ifd[key] = int(h5d[key][0])
+                            print type(ifd[key])
+                        if type(h5d[key][0]) in float_types:
+                            #print "FLOAT"
+                            ifd[key] = float(h5d[key][0])
+                            print type(ifd[key])
+                        if type(h5d[key][0]) in str_types:
+                            #print "STRING"
+                            ifd[key] = str(h5d[key][0])
+                            print type(ifd[key])
+                    else:
+                        ifd[key] = h5d[key][:]
+
+        except ValueError:
+            self.hdf.close()
+            print key
+            print h5d[key]
+            try:
+                print ifd[key]
+            except:
+                pass
+            raise
+
+        self.date_obs   = self.h_uv_data["DATE-OBS"]
+        self.telescope  = self.h_uv_data["TELESCOP"]
+        self.instrument = self.h_array_geometry["ARRNAM"]
+        self.source     = self.d_source["SOURCE"][0]
 
     def setXml(self, table, keyword, value):
         """ Find a header parameter and replace it """
@@ -685,6 +738,37 @@ class InterFits(object):
         dump_json(uvf.d_array_geometry, os.path.join(dirname_out, 'd_array_geometry.json'))
         dump_json(uvf.d_frequency, os.path.join(dirname_out, 'd_frequency.json'))
         dump_json(uvf.d_source, os.path.join(dirname_out, 'd_source.json'))
+
+    def exportHdf5(self, filename_out):
+        """ Export data as HDF5 file
+
+        filename_out: str
+            name of output files into.
+        """
+        h1("Exporting to %s"%filename_out)
+        self.hdf = h5py.File(filename_out, "w")
+
+        ifds = [self.h_antenna, self.h_source, self.h_array_geometry, self.h_frequency, self.h_uv_data,
+                self.d_antenna, self.d_source, self.d_array_geometry, self.d_frequency, self.d_uv_data,
+                self.h_common, self.h_params]
+
+        ifd_names = ["h_antenna", "h_source", "h_array_geometry", "h_frequency", "h_uv_data",
+                     "d_antenna", "d_source", "d_array_geometry", "d_frequency", "d_uv_data",
+                     "h_common", "h_params"]
+
+        for ii in range(len(ifds)):
+            ifd      = ifds[ii]
+            ifd_name = ifd_names[ii]
+
+            h2("Creating %s"%ifd_name)
+            hgroup = self.hdf.create_group(ifd_name)
+            for key in ifd:
+                if type(ifd[key]) in (str, int, float, unicode):
+                    hgroup.create_dataset(key, data=[ifd[key]])
+                else:
+                    hgroup.create_dataset(key, data=ifd[key])
+
+        self.hdf.close()
 
     def exportFitsidi(self, filename_out, config_xml=None, verbose=False):
         """ Export data as FITS IDI 

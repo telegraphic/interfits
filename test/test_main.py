@@ -29,7 +29,8 @@ def compare_dicts(dict_a, dict_b):
                     assert type(dict_a[k]) == type(dict_b[k])
             except:
                 if k not in ok_exceptions:
-
+                    print "\nError:", k
+                    print type(dict_a[k]), type(dict_b[k])
                     if type(dict_a[k]) is str and dict_a[k].strip() == '':
                         dict_a[k] = '(Empty str)'
 
@@ -37,12 +38,10 @@ def compare_dicts(dict_a, dict_b):
                         dict_a[k] = '(Empty str)'
 
                     if type(dict_b[k]) in (float, int):
-                         print "\nError:", k
                          print dict_a[k], dict_b[k]
                     else:
-                        print "\nError:", k
                         print dict_a[k][:10], '\n', dict_b[k][:10]
-                    print type(dict_a[k]), type(dict_b[k])
+
                     try:
                         print "Len: %i %i"%(len(dict_a[k]), len(dict_b[k]))
                     except:
