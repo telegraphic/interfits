@@ -43,7 +43,7 @@ class LedaFits(InterFits):
         if type(filename) is tuple:
           matched = True
           head, data = filename[0], filename[1]
-          self.readDada('dada', header_dict=head, data_arr=data)
+          self.readDada(header_dict=head, data_arr=data)
 
         elif filename:
             matched = False
@@ -252,15 +252,20 @@ class LedaFits(InterFits):
             h2("Loading from shared memory")
             d = HeaderDataUnit(header_dict, data_arr)
             flux = data_arr
+            h2("Generating baseline IDs")
+            bls, ant_arr = self.generateBaselineIds(n_ant)
+            bl_lower = []
+            while len(bl_lower) < len(flux):
+                bl_lower += bls
         else:
             h2("Loading visibility data")
             d = dada.DadaSubBand(self.filename)
+            h2("Generating baseline IDs")
+            bls, ant_arr = self.generateBaselineIds(n_ant)
+            bl_lower = []
+            for dd in range(vis.shape[0]):
+                bl_lower += bls
 
-        h2("Generating baseline IDs")
-        bls, ant_arr = self.generateBaselineIds(n_ant)
-        bl_lower = []
-        for dd in range(vis.shape[0]):
-            bl_lower += bls
 
         if not header_dict:
             h2("Converting visibilities to FLUX columns")
