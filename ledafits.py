@@ -18,7 +18,7 @@ from lib import dada, uvw
 import leda_config
 
 # Load globals from config file
-OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT
+OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT_PER_FILE 
 
 class LedaFits(InterFits):
     """ LEDA extension of InterFits class 
@@ -300,10 +300,20 @@ class LedaFits(InterFits):
         self.instrument = d.header["INSTRUMENT"]
         self.telescope  = d.header["TELESCOPE"]
         
-        # Convert UTC_START into dateTtime format
-        dd_obs = d.header["UTC_START"][0:10]
-        tt_obs = d.header["UTC_START"][11:]
-        date_obs = dd_obs + 'T' + tt_obs
+        # Compute time offset
+        h2("Computing UTC offsets")
+        dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+        byte_offset = int(d.header["OBS_OFFSET"])
+        bytes_per_avg = int(d.header["BYTES_PER_AVG"])
+        num_int = byte_offset / bytes_per_avg
+        time_offset = num_int * leda_config.INT_TIME
+        dt_obj = dt_obj + timedelta(seconds=time_offset)
+        date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
+        dd_obs   = dt_obj.strftime("%Y-%m-%d")
+        
+        print "UTC START:   %s"%d.header["UTC_START"]
+        print "TIME OFFSET: %s"%timedelta(seconds=time_offset)
+        print "NEW START:   %s"%date_obs
         
         self.date_obs   = date_obs
         self.h_params["NSTOKES"] = 4
@@ -323,9 +333,9 @@ class LedaFits(InterFits):
         self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
 
         print d.header
-        print self.d_frequency
-        print self.h_common
-        print self.h_params
+        #print self.d_frequency
+        #print self.h_common
+        #print self.h_params
 
     def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
@@ -367,8 +377,6 @@ class LedaFits(InterFits):
         print "UTC: %s"%dt_utc
         print "LST: %s (%s)"%(lst, lst_deg)
         return lst_deg
-
-
 
     def generateBaselineIds(self, n_ant):
         """ Generate a list of unique baseline IDs and antenna pairs
@@ -441,10 +449,10 @@ class LedaFits(InterFits):
                 print "\n"
                 raise
 
-        print "LST:        %s"%lst_deg
-        print "Source RA:  %s"%ra_deg
-        print "Source DEC: %s"%dec_deg
-        print "HA:         %s"%np.rad2deg(H)
+        print "LST:        %s deg"%lst_deg
+        print "Source RA:  %s deg"%ra_deg
+        print "Source DEC: %s deg"%dec_deg
+        print "HA:         %s deg"%np.rad2deg(H)
 
         # Recreate list of baselines
         h2("Computing UVW coordinates for %s"%src)
@@ -501,32 +509,6 @@ class LedaFits(InterFits):
         #print self.d_uv_data["DATE"]
         #print self.d_uv_data["TIME"]
         #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
-
-    def phaseToSrc(self, src_name):
-        """ Phase to a given source
-
-        src_name (str): Identifier of source to phase to, e.g. CYG, ZEN
-        """
-
-
-        try:
-            if src_name.upper() == 'ZEN':
-                self.generateUVW()
-            else:
-                src_names = leda_config.src_names
-                src_ras   = leda_config.src_ras
-                src_decs  = leda_config.src_decs
-                idx = src_names.index(src_name)
-
-                h1("Phasing to %s"%src_names[idx])
-
-                return src_ras[idx], src_decs[idx]
-        except ValueError:
-            print "Error: Cannot phase to %s"%src_name
-            print "Choose one of CYG, CAS, TAU, VIR, ZEN"
-            raise
-
-
 
     def dumpUVW(self, filename):
         """ Dump precomputed UVW coordinates to file 

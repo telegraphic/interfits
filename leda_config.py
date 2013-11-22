@@ -16,9 +16,9 @@ import ephem
 # PSR-DADA Settings
 ########
 
-OFFSET_DELTA = 1151877120   # Bytes per dada file 
-INT_TIME     = 8.33333      # Integration time (s)
-N_INT        = 100          # Number integrations (?)
+OFFSET_DELTA     = 115187712   # Bytes per dada file 
+INT_TIME         = 8.33333     # Integration time (s)
+N_INT_PER_FILE   = 10          # Number integrations (?)
 
 ########
 # Station location - OVRO
