@@ -1,7 +1,7 @@
 InterFits
 =========
 
-Interfits is a python package for converting and reading radio interfeometric data. It can read
+Interfits is a python package for converting and reading radio interferometric data. It can read
 UV-FITS and FITS-IDI, and also reads two FITS-IDI inspired data formats: JSON-IDI and HDF5-IDI.
 InterFits can export data tables in JSON-IDI, FITS-IDI or HDF5-IDI.
 
