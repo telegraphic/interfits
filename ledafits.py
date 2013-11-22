@@ -248,7 +248,7 @@ class LedaFits(InterFits):
         data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
         """
 
-        if header_dict and data_arr:
+        if type(header_dict) is dict:
             h2("Loading from shared memory")
             d = HeaderDataUnit(header_dict, data_arr)
             flux = data_arr
