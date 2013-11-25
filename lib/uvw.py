@@ -65,31 +65,38 @@ def makeSource(name, ra, dec, flux=0, epoch=2000):
     body = ephem.readdb(line)
     return body
 
-def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True):
+def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True, t_matrix=None):
     """ Converts X-Y-Z coordinates into U-V-W
     Uses the transform from Thompson Moran Swenson (4.1, pg86)
 
     Parameters
     ----------
     xyz: should be a numpy array [x,y,z]
-    H: float (degrees) is the hour angle of the phase reference position
-    d: float (degrees) is the declination
+    H: float (float, radians) is the hour angle of the phase reference position
+    d: float (float, radians) is the declination
     in_seconds (bool): Return in microseconds (True) or meters (False)
-
+    t_matrix (np.matrix): Default none. Can alternatively supply the transform
+                          matrix to be used (useful for speed optimization).
     Returns uvw vector (in microseconds)
     """
-    sin = np.sin
-    cos = np.cos
-
-    H, d = np.deg2rad(H), np.deg2rad(d)
-
     xyz = np.matrix(xyz) # Cast into a matrix
 
-    trans = np.matrix([
-          [sin(H), cos(H), 0],
-          [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
-          [cos(d)*cos(H), -cos(d)*sin(H), sin(H)]
-        ])
+    if H > 2*np.pi or d > 2*np.pi:
+        raise TypeError("HA and DEC are not in radians!")
+
+    if t_matrix is None:
+        sin = np.sin
+        cos = np.cos
+
+        #H, d = np.deg2rad(H), np.deg2rad(d)
+
+        trans = np.matrix([
+              [sin(H), cos(H), 0],
+              [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
+              [cos(d)*cos(H), -cos(d)*sin(H), sin(H)]
+            ])
+    else:
+        trans = t_matrix
 
     uvw = trans * xyz.T
     uvw = np.array(uvw)
@@ -99,6 +106,7 @@ def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True):
         return uvw[:,0] / LIGHT_SPEED
     else:
         return uvw[:,0]
+
 
 def convertToJulianTuple(timestamp):
     """ Convert a list of timestamps into DATE and TIME since julian midnight

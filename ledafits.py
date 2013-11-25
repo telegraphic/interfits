@@ -428,8 +428,8 @@ class LedaFits(InterFits):
 
         # Find HA and DEC of source
         if src.upper() == 'ZEN':
-            H, d = 0, float(leda_config.latitude)
-            dec_deg  = d
+            H, d = 0, np.deg2rad(float(leda_config.latitude))
+            dec_deg  = float(leda_config.latitude)
             ra_deg   = lst_deg
         else:
             try:
@@ -468,14 +468,22 @@ class LedaFits(InterFits):
         else:
             n_ant = len(self.d_array_geometry['ANNAME'])
             xyz   = self.d_array_geometry['STABXYZ']
-            
+
+            # Pre-compute UVW tranformation matrix
+            sin, cos = np.sin, np.cos
+            t_matrix = np.matrix([
+              [sin(H), cos(H), 0],
+              [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
+              [cos(d)*cos(H), -cos(d)*sin(H), sin(H)]
+            ])
+
             # Compute baseline vectors
             bl_veclist, uvw_list = [], []
             for ant_pair in ant_arr:
                 ii, jj = ant_pair[0] - 1, ant_pair[1] - 1
                 bl_vec = xyz[ii] - xyz[jj]
                 bl_veclist.append(bl_vec)
-                uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate))
+                uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate, t_matrix=t_matrix))
             uvw_arr = np.array(uvw_list)
             
             # Fill with data
