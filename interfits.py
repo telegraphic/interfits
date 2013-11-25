@@ -107,45 +107,48 @@ class InterFits(object):
         to_print += "Date obs:   %s\n" % self.date_obs
         return to_print
 
-    def readFile(self, filename):
+    def readFile(self, filename=None, filetype=None):
+        """ Check file type, and load corresponding
+
+        filename (str): name of file. Alternatively, if a psrdada header dictionary
+                        is passed, data will be loaded from shared memory. File type
+                        is inferred from extension (unless filetype arg is also passed).
+        filetype (str): Defaults to none. If passed, treat file as having an explicit
+                        type. Useful for when extension does not match data.
+        """
         # Check what kind of file to load
-        if filename:
-            matched = False
-            regex = '([0-9A-Za-z-_]+).uvfits'
-            match = re.search(regex, filename)
-            if match:
-                self._readFile('uvfits')
-                matched = True
 
-            regex = '([0-9A-Za-z-_]+).fitsidi'
-            match = re.search(regex, filename)
-            if match:
-                self._readFile('fitsidi')
-                matched = True
+        if filetype is not None:
+            self._readFile(filetype)
 
-            regex = '([0-9A-Za-z-_]+).hdf'
-            match = re.search(regex, filename)
-            if match:
-                self._readFile('hdf5')
+        else:
+            if filename is None:
+                pass
+            elif type(filename) is tuple:
+                # Tuple is header_dict and numpy data array
                 matched = True
-
-            regex = '([0-9A-Za-z-_]+).json'
-            match = re.search(regex, filename)
-            if match:
-                self._readFile('json')
-                matched = True
-
-            if matched == False:
-                raise IOError("Unknown file format: %s"%filename)
+                head, data = filename[0], filename[1]
+                self.readDada(header_dict=head, data_arr=data)
+            else:
+                file_ext = os.path.splitext(filename)[1][1:]
+                self._readFile(file_ext)
 
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
         return {
-            'uvfits': self.readUvfits,
-            'fitsidi': self.readFitsidi,
-            'hdf5': self.readHdf5,
-            'json': self.readJson
-        }.get(filetype)()
+                'uvfits': self.readUvfits,
+                'fitsidi': self.readFitsidi,
+                'fidi': self.readFitsidi,
+                'idifits': self.readFitsidi,
+                'hdf5': self.readHdf5,
+                'hdf': self.readHdf5,
+                'h5': self.readHdf5,
+                'json': self.readJson
+        }.get(filetype, self.readError)()
+
+    def readError(self):
+        """ Raise an error if file cannot be read """
+        raise IOError("Cannot read %s"%self.filename)
 
     def searchKeys(self, pattern, header):
         """ Search through a header, returning a list of matching keys 
@@ -578,15 +581,15 @@ class InterFits(object):
                         if type(h5d[key][0]) in int_types:
                             #print "INT"
                             ifd[key] = int(h5d[key][0])
-                            print type(ifd[key])
+                            #print type(ifd[key])
                         if type(h5d[key][0]) in float_types:
                             #print "FLOAT"
                             ifd[key] = float(h5d[key][0])
-                            print type(ifd[key])
+                            #print type(ifd[key])
                         if type(h5d[key][0]) in str_types:
                             #print "STRING"
                             ifd[key] = str(h5d[key][0])
-                            print type(ifd[key])
+                            #print type(ifd[key])
                     else:
                         ifd[key] = h5d[key][:]
 
