@@ -13,14 +13,17 @@ from colorama import Fore, Back, Style
 import ephem
 import numpy as np
 
+sys.path.append("/home/leda/dan/interfits")
+import leda_config
+
 # Correlator setup - should not need to change
 SUBBAND_BWIDTH  = 2.616     # Bandwidth in MHz
 SUBBAND_NCHANS  = 109       # Number of channels in each subband
 START_FREQ      = 30        # Start frequency of correlator in MHz
 N_SCANS         = 10        # Number of scans in a dada file
 
-OFFSET_DELTA, INT_TIME, N_INT = 1044480000, 8.53333, 100
-(latitude, longitude, elevation) = ('36.8', '-118.2', 1184)
+OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT_PER_FILE
+(latitude, longitude, elevation) = (leda_config.latitude, leda_config.longitude, leda_config.elevation)
 
 def h1(text):
     """ Print text as a fancy header """

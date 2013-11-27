@@ -21,7 +21,8 @@ def generate_fitsidi(filename_in, filename_out=None):
     
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
-    uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
+    uvw.generateUVW(src='TAU', use_stored=False, update_src=True)
+    uvw.apply_cable_delays()
     uvw.remove_miriad_baselines()
     uvw.exportFitsidi(filename_out)
     
