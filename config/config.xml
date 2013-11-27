@@ -300,6 +300,20 @@
 
   <!-- 
   
+  FLAG table header
+  ===================
+  
+  The FLAG table designates data included in the UV_DATA table that are to be regarded
+  a priori as invalid. It is an optional table.
+  
+  -->
+  
+  <FLAG>
+    <EXTNAME>'FLAG'</EXTNAME>
+  </FLAG>
+
+  <!-- 
+  
   UV_DATA table header
   ===================
 

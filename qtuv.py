@@ -403,8 +403,11 @@ class InterFitsGui(QtGui.QWidget):
         
         #x_data    = self.uv.d_uv_data['FLUX'][bls == bl_id,:,axis]  # Baselines, freq and stokes
         #x         = x_data[:,:,0] + 1j * x_data[:,:,1]
-
-        x = self.stokes[axis][bls == bl_id]
+        try:
+            x = self.stokes[axis][bls == bl_id]
+        except:
+            print self.stokes.shape
+            print self.stokes[axis].shape
 
         fig = self.sp_fig
         self.ax_zoomed = False
@@ -504,7 +507,9 @@ class InterFitsGui(QtGui.QWidget):
 
         #bls = bls.tolist()
 
-        bl_ids = self.uv.search_baselines(ref_ant)
+        #TODO: Make this work quicker!
+        #bl_ids = self.uv.search_baselines(ref_ant)
+        bl_ids = [256*ref_ant + i for i in range(1, n_rows * n_cols + 1)]
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
         #x_data    = self.uv.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes

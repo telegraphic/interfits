@@ -22,6 +22,8 @@ def generate_fitsidi(filename_in, filename_out=None):
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
     uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
+    uvw.flag_antenna(84)
+    uvw.apply_antenna_delays()
     uvw.remove_miriad_baselines()
     uvw.exportFitsidi(filename_out)
     

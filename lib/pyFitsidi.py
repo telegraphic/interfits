@@ -106,6 +106,13 @@ def parseConfig(tagname, config='config.xml'):
         print child.tag
         print child.text
         raise
+    except AttributeError:
+        print "ERROR encountered when parsing config file."
+        print "Tag name:   %s"%tagname
+        print "Child tag:  %s"%child.tag
+        print "Child text: %s"%child.text
+        raise
+
     return vals
 
 
@@ -938,7 +945,6 @@ def make_flag(config='config.xml', num_rows=1):
   """
 
     # Generate headers from config file
-    params = parseConfig('PARAMETERS', config)
     cards = parseConfig('FLAG', config)
     common = parseConfig('COMMON', config)
 

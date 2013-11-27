@@ -9,7 +9,7 @@ def compare_dicts(dict_a, dict_b):
     Second dict may have extra keys, but must have all keys of first dict.
     """
     all_ok = True
-    ok_exceptions = ['STAXOF', 'POLCALA', 'POLCALB', 'VELDEF', 'VELTYP']
+    ok_exceptions = ['STAXOF', 'POLCALA', 'POLCALB', 'VELDEF', 'VELTYP','INSTRUME']
 
     for k in dict_a:
         if dict_b.has_key(k):

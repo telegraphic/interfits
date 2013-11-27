@@ -57,7 +57,6 @@ class LedaFits(InterFits):
                 self.readDada(header_dict=head, data_arr=data)
             else:
                 file_ext = os.path.splitext(filename)[1][1:]
-                print file_ext
                 self._readFile(file_ext)
 
     def _readFile(self, filetype):
@@ -221,7 +220,7 @@ class LedaFits(InterFits):
                             loading data from file, data will be loaded from data_arr
         data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
         """
-
+        h1("Loading DADA data")
         if type(header_dict) is dict:
             h2("Loading from shared memory")
             d = HeaderDataUnit(header_dict, data_arr)
@@ -248,7 +247,7 @@ class LedaFits(InterFits):
             re_vis = np.real(vis)
             im_vis = np.imag(vis)
             # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
-            flux = np.zeros([len(bl_lower), n_chans * n_stk * 2])
+            flux = np.zeros([len(bl_lower), n_chans * n_stk * 2], dtype='float32')
             for ii in range(len(bl_lower)):
                 ant1, ant2 = ant_arr[ii]
                 ant1, ant2 = ant1 - 1, ant2 - 1
@@ -260,11 +259,13 @@ class LedaFits(InterFits):
                 im_yy = im_vis[0, ant1, ant2, :, 0, 1]
                 im_xy = im_vis[0, ant1, ant2, :, 1, 0]
                 im_yx = im_vis[0, ant1, ant2, :, 1, 1]
+
                 flux[ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
             #print flux.shape
 
         self.d_uv_data["BASELINE"] = bl_lower
         self.d_uv_data["FLUX"] = flux
+
 
         h1("Generating FITS-IDI schema from XML")
         if xmlbase is None:
@@ -321,6 +322,7 @@ class LedaFits(InterFits):
         self.h_params["NSTOKES"] = 4
         self.h_params["NBAND"]   = 1
         self.h_params["NCHAN"]   = int(d.header["NCHAN"])
+        self.h_common["NO_CHAN"] = int(d.header["NCHAN"])
         self.h_common["REF_FREQ"] = float(d.header["CFREQ"]) * 1e6
         self.h_common["CHAN_BW"]  = float(d.header["BW"]) * 1e6 / self.h_params["NCHAN"]
         self.h_common["REF_PIXL"] = self.h_params["NCHAN"] / 2
@@ -380,7 +382,7 @@ class LedaFits(InterFits):
         print "LST: %s (%s)"%(lst, lst_deg)
         return lst_deg
 
-    def generateBaselineIds(self, n_ant):
+    def generateBaselineIds(self, n_ant=None):
         """ Generate a list of unique baseline IDs and antenna pairs
         
         This uses the MIRIAD definition for >256 antennas:
@@ -388,6 +390,9 @@ class LedaFits(InterFits):
         
         n_ant: number of antennas in the array
         """
+        if n_ant is None:
+            n_ant = self.n_ant
+
         bls, ant_arr = [], []
         for ii in range(1, n_ant + 1):
             for jj in range(1, n_ant + 1):
@@ -451,10 +456,10 @@ class LedaFits(InterFits):
                 print "\n"
                 raise
 
-        print "LST:        %s deg"%lst_deg
-        print "Source RA:  %s deg"%ra_deg
-        print "Source DEC: %s deg"%dec_deg
-        print "HA:         %s deg"%np.rad2deg(H)
+        print "LST:        %2.3f deg"%lst_deg
+        print "Source RA:  %2.3f deg"%ra_deg
+        print "Source DEC: %2.3f deg"%dec_deg
+        print "HA:         %2.3f deg"%np.rad2deg(H)
 
         # Recreate list of baselines
         h2("Computing UVW coordinates for %s"%src)
@@ -470,6 +475,10 @@ class LedaFits(InterFits):
 
             # Pre-compute UVW tranformation matrix
             sin, cos = np.sin, np.cos
+            try:
+                assert H < 2 * np.pi and d < 2 * np.pi
+            except AssertionError:
+                raise ValueError("HA and DEC are too large (may not be in radians).")
             t_matrix = np.matrix([
               [sin(H), cos(H), 0],
               [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
@@ -514,8 +523,6 @@ class LedaFits(InterFits):
             self.d_source["RAEPO"]  = self.s2arr(ra_deg)
             self.d_source["DECEPO"] = self.s2arr(dec_deg)
 
-
-        
         #print self.d_uv_data["DATE"]
         #print self.d_uv_data["TIME"]
         #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
@@ -614,3 +621,118 @@ class LedaFits(InterFits):
 
         h2("Setting INTTIME to %s"%INT_TIME)
         self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * INT_TIME
+
+    def flag_antenna(self, antenna_id, reason=None, severity=0):
+        """ Flag antenna as bad
+
+        antenna_id (int): ID of antenna to flag. Starts at 1.
+        reason (str): Defaults to None; short (<24 char) reason for flagging
+        severity (int): -1 Not assigned, 0 Known bad, 1 Probably bad, 2 Maybe bad
+        """
+        h2("Flagging antenna %i"%antenna_id)
+
+        flag_keywords = ['SOURCE_ID', 'ARRAY', 'ANTS', 'FREQID', 'BANDS', 'CHANS', 'PFLAGS', 'REASON', 'SEVERITY']
+        try:
+            self.d_flag["SOURCE_ID"]
+        except KeyError:
+            for k in flag_keywords:
+                self.d_flag[k] = []
+
+        if reason is None:
+            reason = "Known bad antenna."
+
+        flag_k_zeros  = ['SOURCE_ID', 'ARRAY', 'FREQID']
+        flag_k_one    = ['BANDS']
+        for k in flag_k_one:
+            self.d_flag[k].append(1)
+        for k in flag_k_zeros:
+            self.d_flag[k].append(0)
+
+        self.d_flag["ANTS"].append((antenna_id, 0))
+        self.d_flag["REASON"].append(reason)
+        self.d_flag["PFLAGS"].append((1,1,1,1))
+        self.d_flag["SEVERITY"].append(severity)
+        self.d_flag["CHANS"].append((0, 4096))
+
+    def apply_antenna_delays(self):
+        """ Apply antenna cable delays
+
+        Each cable introduces a phase shift of
+            phi = 2 pi f t
+        Visibility is VpVq*, so we need to apply
+            exp(-i  (phip - phiq))
+        to compensate for cable delay
+
+        TODO: Phase values can be precomputed; implement this for speed boost.
+        """
+
+        h1("Applying cable delays")
+        #t0 = time.time()
+        # Load antenna Electrical Lengths
+        sol   = leda_config.SPEED_OF_LIGHT
+        els   = load_json(leda_config.json_antenna_el_lens)["EL"]
+        tdelts = els / sol
+
+        # Generate frequency array from metadata
+        ref_delt = self.h_common["CHAN_BW"]
+        ref_pix  = self.h_common["REF_PIXL"]
+        ref_val  = self.h_common["REF_FREQ"]
+        num_pix  = self.h_common["NO_CHAN"]
+        freqs    = np.arange(0,num_pix,1) * ref_delt + (ref_val - ref_pix * ref_delt)
+        print freqs.shape
+        # Compute phase delay for each antenna pair
+        try:
+            assert self.d_uv_data["FLUX"].dtype == 'float32'
+        except AssertionError:
+            print self.d_uv_data["FLUX"].dtype
+            raise
+
+        flux  = self.d_uv_data["FLUX"].view('complex64')
+
+        bls, ant_arr = self.generateBaselineIds()
+        w = 2 * np.pi * freqs # Angular freq
+
+        #t1 = time.time()
+        for ii in range(len(bls)):
+            ant1, ant2 = ant_arr[ii]
+            bl         = bls[ii]
+            td1, td2   = tdelts[ant1-1], tdelts[ant2-1]
+
+            # Compute phases for X and Y pol on antennas A and B
+            pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
+
+            # Corrections require negative sign (otherwise reapplying delays)
+            e_xx = np.exp(-1j * (pxa - pxb))
+            e_yy = np.exp(-1j * (pya - pyb))
+            e_xy = np.exp(-1j * (pxa - pyb))
+            e_yx = np.exp(-1j * (pya - pxb))
+
+            phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
+
+            #if not ii%5000:
+            #    plt.subplot(211)
+            #    plt.plot(np.angle(phase_corrs[::4]))
+            #    plt.subplot(212)
+            #    plt.plot(np.angle(flux[ii][::4]))
+            flux[ii] = flux[ii] * phase_corrs
+            #if not ii%5000:
+            #    plt.plot(np.angle(flux[ii][::4]))
+            #    plt.xlabel("Ant %s, Ant %s"%(ant1, ant2))
+            #    plt.show()
+            #    print td1, td2
+            #    #exit()
+            #print flux[ii].shape
+            #print phases.shape
+#
+            #time.sleep(2)
+        #t2 = time.time()
+
+        #print t2 - t0
+        #print t2 - t1
+
+
+
+
+
+
+
