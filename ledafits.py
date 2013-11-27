@@ -654,7 +654,7 @@ class LedaFits(InterFits):
         self.d_flag["SEVERITY"].append(severity)
         self.d_flag["CHANS"].append((0, 4096))
 
-    def apply_antenna_delays(self):
+    def apply_cable_delays(self):
         """ Apply antenna cable delays
 
         Each cable introduces a phase shift of
