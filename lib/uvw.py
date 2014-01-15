@@ -93,7 +93,7 @@ def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True, t_matrix=None):
         trans = np.matrix([
               [sin(H), cos(H), 0],
               [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
-              [cos(d)*cos(H), -cos(d)*sin(H), sin(H)]
+              [cos(d)*cos(H), -cos(d)*sin(H), sin(d)]
             ])
     else:
         trans = t_matrix
