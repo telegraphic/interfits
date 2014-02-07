@@ -37,6 +37,7 @@ try:
     #from PyQt4 import QtGui, QtCore
 except:
     print "Error: cannot load PySide or PyQt4. Please check your install."
+    raise
     exit()
     
 try:    
@@ -377,7 +378,7 @@ class InterFitsGui(QtGui.QWidget):
                 cbar = self.sp_fig.colorbar(img, orientation='horizontal')
                 cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
                 cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
-                  
+
         ax.set_aspect(data.shape[1] / data.shape[0] * 3. / 4)
         if label_axes:
             self.updateFreqAxis(ax, n_ticks=5)
@@ -408,6 +409,7 @@ class InterFitsGui(QtGui.QWidget):
         except:
             print self.stokes.shape
             print self.stokes[axis].shape
+            raise
 
         fig = self.sp_fig
         self.ax_zoomed = False
@@ -526,7 +528,7 @@ class InterFitsGui(QtGui.QWidget):
                 
                 #ax.set_title("%s %s"%(i, j))
                 x = x_cplx[i*n_cols+j::self.uv.n_ant]
-                
+
                 img = self.plot_imshow(ax, x, stat=plot_type, show_cbar=False, label_axes=False)                
                 
                 if i == n_rows-1:

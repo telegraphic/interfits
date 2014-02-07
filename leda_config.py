@@ -43,12 +43,18 @@ ARRNAM            = "LEDA-512"
 
 # Default files to load to fill in FITS-IDI
 fileroot = os.path.abspath(os.path.dirname(__file__))
-json_h_array_geometry  = os.path.join(fileroot, 'config/leda/h_array_geometry.json')
-json_d_array_geometry  = os.path.join(fileroot, 'config/leda/d_array_geometry.json')
-json_h_antenna         = os.path.join(fileroot, 'config/leda/h_antenna.json')
-json_d_antenna         = os.path.join(fileroot, 'config/leda/d_antenna.json')
-json_uvw_coordinates   = os.path.join(fileroot, 'config/leda/z_uvw.json')
-json_antenna_el_lens   = os.path.join(fileroot, 'config/leda/z_antenna_el_lens.json')
+#json_h_array_geometry  = os.path.join(fileroot, 'config/leda/h_array_geometry.json')
+#json_d_array_geometry  = os.path.join(fileroot, 'config/leda/d_array_geometry.json')
+#json_h_antenna         = os.path.join(fileroot, 'config/leda/h_antenna.json')
+#json_d_antenna         = os.path.join(fileroot, 'config/leda/d_antenna.json')
+#json_uvw_coordinates   = os.path.join(fileroot, 'config/leda/z_uvw.json')
+#json_antenna_el_lens   = os.path.join(fileroot, 'config/leda/z_antenna_el_lens.json')
+
+json_h_array_geometry  = os.path.join(fileroot, 'config/leda64_nm/h_array_geometry.json')
+json_d_array_geometry  = os.path.join(fileroot, 'config/leda64_nm/d_array_geometry.json')
+json_h_antenna         = os.path.join(fileroot, 'config/leda64_nm/h_antenna.json')
+json_d_antenna         = os.path.join(fileroot, 'config/leda64_nm/d_antenna.json')
+
 
 # A few sources to phase to
 src_names = ['CYG', 'CAS', 'TAU', 'VIR']

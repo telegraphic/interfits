@@ -213,7 +213,7 @@ class LedaFits(InterFits):
         self.source    = self.d_source["SOURCE"][0]
 
 
-    def readDada(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+    def readDada(self, n_int=10,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
         """ Read a LEDA DADA file.
 
         header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
@@ -232,12 +232,20 @@ class LedaFits(InterFits):
                 bl_lower += bls
         else:
             h2("Loading visibility data")
-            d   = dada.DadaSubBand(self.filename)
+            d   = dada.DadaSubBand(self.filename, n_int=n_int)
             vis = d.data
+            try:
+                n_chans = int(d.header["NCHAN"])
+                n_pol   = int(d.header["NPOL"])
+                n_ant   = int(d.header["NSTATION"])
+            except ValueError:
+                print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
+                raise
+
             h2("Generating baseline IDs")
             bls, ant_arr = self.generateBaselineIds(n_ant)
             bl_lower = []
-            for dd in range(vis.shape[0]):
+            for dd in range(vis.shape[0] / n_int):
                 bl_lower += bls
 
         if not header_dict:
@@ -247,23 +255,25 @@ class LedaFits(InterFits):
             re_vis = np.real(vis)
             im_vis = np.imag(vis)
             # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
-            flux = np.zeros([len(bl_lower), n_chans * n_stk * 2], dtype='float32')
-            for ii in range(len(bl_lower)):
-                ant1, ant2 = ant_arr[ii]
-                ant1, ant2 = ant1 - 1, ant2 - 1
-                re_xx = re_vis[0, ant1, ant2, :, 0, 0]
-                re_yy = re_vis[0, ant1, ant2, :, 0, 1]
-                re_xy = re_vis[0, ant1, ant2, :, 1, 0]
-                re_yx = re_vis[0, ant1, ant2, :, 1, 1]
-                im_xx = im_vis[0, ant1, ant2, :, 0, 0]
-                im_yy = im_vis[0, ant1, ant2, :, 0, 1]
-                im_xy = im_vis[0, ant1, ant2, :, 1, 0]
-                im_yx = im_vis[0, ant1, ant2, :, 1, 1]
+            flux = np.zeros([len(bl_lower) * n_int, n_chans * n_stk * 2], dtype='float32')
+            for int_num in range(n_int):
+                idx = int_num * len(bl_lower)
+                for ii in range(len(bl_lower)):
+                    ant1, ant2 = ant_arr[ii]
+                    ant1, ant2 = ant1 - 1, ant2 - 1
+                    re_xx = re_vis[int_num, ant1, ant2, :, 0, 0]
+                    re_yy = re_vis[int_num, ant1, ant2, :, 0, 1]
+                    re_xy = re_vis[int_num, ant1, ant2, :, 1, 0]
+                    re_yx = re_vis[int_num, ant1, ant2, :, 1, 1]
+                    im_xx = im_vis[int_num, ant1, ant2, :, 0, 0]
+                    im_yy = im_vis[int_num, ant1, ant2, :, 0, 1]
+                    im_xy = im_vis[int_num, ant1, ant2, :, 1, 0]
+                    im_yx = im_vis[int_num, ant1, ant2, :, 1, 1]
 
-                flux[ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
+                    flux[idx + ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
             #print flux.shape
 
-        self.d_uv_data["BASELINE"] = bl_lower
+        self.d_uv_data["BASELINE"] =  np.array([bl_lower for ii in range(int_num)]).flatten()
         self.d_uv_data["FLUX"] = flux
 
 

@@ -80,10 +80,10 @@ class DadaSubBand(object):
     """
     DEFAULT_HEADER_SIZE = 4096
 
-    def __init__(self, filename):
+    def __init__(self, filename, n_int=1):
         self.filename = filename
         self.read_header()
-        self.read_data(0)
+        self.read_data(0, n_int=n_int)
         self.datestamp = self.header['UTC_START']
 
     def __repr__(self):
@@ -152,13 +152,13 @@ class DadaSubBand(object):
         else:
             raise KeyError("Unsupported data order '%s'" % self.data_order)
 
-    def read_data(self, first_int, nint=1):
+    def read_data(self, first_int, n_int=1):
         """
         Returns the specified integrations as a numpy array with shape:
         (nint, nchans, nstation, nstation, npol, npol), dtype=complex64
         """
         byte_offset = first_int * self.bytes_per_avg
-        nbytes = nint * self.bytes_per_avg
+        nbytes = n_int * self.bytes_per_avg
         #nelements = nbytes / (self.nbit / 8)
 
         file_idx = byte_offset // self.bytes_per_file
@@ -173,7 +173,7 @@ class DadaSubBand(object):
         data = np.fromfile(f, dtype=np.uint8, count=nbytes)
         #data = np.fromfile(f, dtype=self.dtype, count=nelements)
         f.close()
-        return self.transform_raw_data(data, nint)
+        return self.transform_raw_data(data, n_int)
 
     def transform_raw_data(self, data, nint):
         # Transform raw correlator data into a sensible format

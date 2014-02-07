@@ -1,5 +1,5 @@
 import sys
-sys.path.append("/Volumes/Storage/LEDA/interfits")
+sys.path.append("/workdata/leda/interfits")
 
 from ledafits import *
 
