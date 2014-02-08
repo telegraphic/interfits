@@ -1030,9 +1030,28 @@ class InterFits(object):
 
         return True
 
+    def verify_uv_table(self):
+        """ Basic diagnostics on UV_DATA table """
+        print "Verification: checking UV_DATA for null entries"
+
+        freq_ids   = self.d_uv_data["FREQID"]
+        source_ids = self.d_uv_data["SOURCE"]
+        baselines  = self.d_uv_data["BASELINE"]
+
+        if 0 in freq_ids:
+            raise VerificationError("FREQID in UV_DATA references non-existent FREQ with ID 0")
+        if 0 in source_ids:
+            raise VerificationError("SOURCE in UV_DATA references non-existent SOURCE with ID 0")
+        if 0 in baselines:
+            raise VerificationError("BASELINE in UV_DATA references non-existent BASELINE with ID 0")
+
+        print "Verification: OK. UV_DATA does not contain null (zero) entries in required fields"
+        return True
+
     def verify(self):
         """ Run a series of diagnostics to test data validity """
         h1("Data verification")
+        self.verify_uv_table()
         self.verify_baseline_order()
 
     def formatStokes(self):

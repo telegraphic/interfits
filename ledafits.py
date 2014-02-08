@@ -307,7 +307,7 @@ class LedaFits(InterFits):
         self.readFitsidi(from_file=False, load_uv_data=False)
 
         h2("Populating interfits dictionaries")
-        self.setDefaults(n_uv_rows=len(bl_lower))
+        self.setDefaults(n_uv_rows=len(bl_lower * n_int))
         self.obs_code = ''
         self.correlator = d.header["INSTRUMENT"]
         self.instrument = d.header["INSTRUMENT"]
