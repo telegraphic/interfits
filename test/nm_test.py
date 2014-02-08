@@ -29,8 +29,8 @@ if __name__ == '__main__':
     import sys, os
     
     try:
-        filename_in  = 'nm-2014-01-29-22.dada'
-        filename_out = 'nm.fitsidi'
+        filename_in  = sys.argv[1]
+        filename_out = sys.argv[2]
     except:
         print "ERROR: you must enter a filename"
         print "USAGE: python generate_fitsidi.py <filename_in> <filename_out>"
