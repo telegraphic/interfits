@@ -21,7 +21,7 @@ def generate_fitsidi(filename_in, filename_out=None):
     
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
-    uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
+    uvw.generateUVW(src='ZEN', use_stored=False, update_src=True)
     #uvw.flag_antenna(84)
     #uvw.apply_cable_delays()
     #uvw.remove_miriad_baselines()
@@ -31,8 +31,8 @@ if __name__ == '__main__':
     import sys, os
     
     try:
-        filename_in  = sys.argv[1]
-        filename_out = sys.argv[2]
+        filename_in  = 'nm-2014-01-29-22.dada'
+        filename_out = 'nm.fitsidi'
     except:
         print "ERROR: you must enter a filename"
         print "USAGE: python generate_fitsidi.py <filename_in> <filename_out>"

@@ -273,7 +273,7 @@ class LedaFits(InterFits):
                     flux[idx + ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
             #print flux.shape
 
-        self.d_uv_data["BASELINE"] =  np.array([bl_lower for ii in range(int_num)]).flatten()
+        self.d_uv_data["BASELINE"] = np.array([bl_lower for ii in range(n_int)]).flatten()
         self.d_uv_data["FLUX"] = flux
 
 
