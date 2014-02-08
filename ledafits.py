@@ -489,10 +489,12 @@ class LedaFits(InterFits):
                 assert H < 2 * np.pi and d < 2 * np.pi
             except AssertionError:
                 raise ValueError("HA and DEC are too large (may not be in radians).")
+
+            # UVW tranformation matrix -- in lib.uvw
             t_matrix = np.matrix([
               [sin(H), cos(H), 0],
               [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
-              [cos(d)*cos(H), -cos(d)*sin(H), sin(H)]
+              [cos(d)*cos(H), -cos(d)*sin(H), sin(d)]
             ])
 
             # Compute baseline vectors
