@@ -1,5 +1,6 @@
 import numpy as np
 import glob
+import os
 
 
 def lookup_warn(table, key, default=None):
@@ -80,9 +81,16 @@ class DadaSubBand(object):
     """
     DEFAULT_HEADER_SIZE = 4096
 
-    def __init__(self, filename, n_int=1):
+    def __init__(self, filename, n_int=None):
         self.filename = filename
         self.read_header()
+
+        # Load entire file unless n_int is specified
+        if n_int is None:
+            file_size = int(self.header["FILE_SIZE"])
+            bpa       = int(self.header["BYTES_PER_AVG"])
+            n_int = file_size / bpa
+
         self.read_data(0, n_int=n_int)
         self.datestamp = self.header['UTC_START']
 

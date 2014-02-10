@@ -22,6 +22,7 @@ def generate_fitsidi(filename_in, filename_out=None):
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
     uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
+    uvw.phase_to_src(src='CYG')
     uvw.exportFitsidi(filename_out)
     uvw.verify()
 

@@ -481,9 +481,9 @@ class InterFitsGui(QtGui.QWidget):
         img = self.plot_imshow(ax, x, stat='phase', show_cbar=True)
         
         ax = plt.subplot(247)
-        img = self.plot_imshow(ax, x, stat='amp', show_cbar=True)
+        img = self.plot_imshow(ax, y, stat='amp', show_cbar=True)
         ax = plt.subplot(248)
-        img = self.plot_imshow(ax, x, stat='phase', show_cbar=True)
+        img = self.plot_imshow(ax, y, stat='phase', show_cbar=True)
         
         plt.subplots_adjust(left=0.05, right=0.98, top=0.87, bottom=0.05, wspace=0.25, hspace=0.3)
         

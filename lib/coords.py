@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 # encoding: utf-8
 """
-uvw.py
+coords.py
 ======
 
 Helper utilities from reading and writing JSON data with numpy arrays. The native JSON
@@ -9,6 +9,7 @@ encoder cannot handle numpy arrays and will chuck a hissy-fit, hence these helpe
 """
 
 import time
+import re
 import ephem
 import numpy as np
 import time, calendar
@@ -108,6 +109,72 @@ def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True, t_matrix=None):
         return uvw[:,0]
 
 
+def altaz2cartesian(alt, az, r=1):
+    """ Convert ALT AZ to cartesian coords
+
+    alt, az in radians
+    """
+    x = r * np.cos(alt) * np.sin(az)
+    y = r * np.cos(alt) * np.cos(az)
+    z = r * np.sin(alt)
+    return np.array([x, y, z])
+
+def geo2ecef(lat, lon, elev):
+    """
+    Convert latitude (rad), longitude (rad), elevation (m) to earth-
+    centered, earth-fixed coordinates.
+
+    Note: This routine from LSL 1.0.0
+    http://fornax.phys.unm.edu/lwa/trac/wiki
+    """
+
+    WGS84_a = 6378137.000000
+    WGS84_b = 6356752.314245
+    N = WGS84_a**2 / np.sqrt(WGS84_a**2*np.cos(lat)**2 + WGS84_b**2*np.sin(lat)**2)
+
+    x = (N+elev)*np.cos(lat)*np.cos(lon)
+    y = (N+elev)*np.cos(lat)*np.sin(lon)
+    z = ((WGS84_b**2/WGS84_a**2)*N+elev)*np.sin(lat)
+
+    return (x, y, z)
+
+
+def ecef2geo(x, y, z):
+    """
+    Convert earth-centered, earth-fixed coordinates to (rad), longitude
+    (rad), elevation (m) using Bowring's method.
+
+    Note: This routine from LSL 1.0.0
+    http://fornax.phys.unm.edu/lwa/trac/wiki
+    """
+
+    WGS84_a = 6378137.000000
+    WGS84_b = 6356752.314245
+    e2 = (WGS84_a**2 - WGS84_b**2) / WGS84_a**2
+    ep2 = (WGS84_a**2 - WGS84_b**2) / WGS84_b**2
+
+    # Distance from rotation axis
+    p = np.sqrt(x**2 + y**2)
+
+    # Longitude
+    lon = np.arctan2(y, x)
+    p = np.sqrt(x**2 + y**2)
+
+    # Latitude (first approximation)
+    lat = np.arctan2(z, p)
+
+    # Latitude (refined using Bowring's method)
+    psi = np.arctan2(WGS84_a*z, WGS84_b*p)
+    num = z + WGS84_b*ep2*np.sin(psi)**3
+    den = p - WGS84_a*e2*np.cos(psi)**3
+    lat = np.arctan2(num, den)
+
+    # Elevation
+    N = WGS84_a**2 / np.sqrt(WGS84_a**2*np.cos(lat)**2 + WGS84_b**2*np.sin(lat)**2)
+    elev = p / np.cos(lat) - N
+
+    return lat, lon, elev
+
 def convertToJulianTuple(timestamp):
     """ Convert a list of timestamps into DATE and TIME since julian midnight
 
@@ -143,3 +210,13 @@ def convertToJulianTuple(timestamp):
     time_elapsed = ephem.julian_date(time.gmtime(ts)[:6]) - julian_midnight
 
     return julian_midnight, time_elapsed
+
+
+def parse_timestring(tstring):
+    """ Convert timestring into timestamp """
+    if re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d\d", tstring):
+        return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
+    elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d", tstring):
+        return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S")
+    else:
+        raise ValueError("Cannot parse %s"%tstring)

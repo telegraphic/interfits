@@ -12,9 +12,10 @@ import time
 import calendar
 from datetime import datetime, timedelta
 import ephem
+import re
 
 from interfits import *
-from lib import dada, uvw
+from lib import dada, coords
 import leda_config
 
 # Load globals from config file
@@ -213,143 +214,215 @@ class LedaFits(InterFits):
         self.source    = self.d_source["SOURCE"][0]
 
 
-    def readDada(self, n_int=10,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
-        """ Read a LEDA DADA file.
+    def readDada(self, n_int=None,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+            """ Read a LEDA DADA file.
 
-        header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
-                            loading data from file, data will be loaded from data_arr
-        data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
+            header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
+                                loading data from file, data will be loaded from data_arr
+            data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
+            """
+
+            h1("Loading DADA data")
+            if type(header_dict) is dict:
+                h2("Loading from shared memory")
+                d = HeaderDataUnit(header_dict, data_arr)
+                flux = data_arr
+                h2("Generating baseline IDs")
+                bls, ant_arr = self.generateBaselineIds(n_ant)
+                bl_lower = []
+                while len(bl_lower) < len(flux):
+                    bl_lower += bls
+            else:
+                h2("Loading visibility data")
+                d   = dada.DadaSubBand(self.filename, n_int)
+                vis = d.data
+                try:
+                    n_chans = int(d.header["NCHAN"])
+                    n_pol   = int(d.header["NPOL"])
+                    n_ant   = int(d.header["NSTATION"])
+
+                    if n_int is None:
+                        n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
+                except ValueError:
+                    print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
+                    raise
+
+                h2("Generating baseline IDs")
+                bls, ant_arr = self.generateBaselineIds(n_ant)
+                bl_lower = []
+                for dd in range(vis.shape[0] / n_int):
+                    bl_lower += bls
+
+            if not header_dict:
+                h2("Converting visibilities to FLUX columns")
+                # Need to convert into real & imag
+                # Not a major performance hit as these are super fast.
+                re_vis = np.real(vis)
+                im_vis = np.imag(vis)
+                # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
+                flux = np.zeros([len(bl_lower) * n_int, n_chans * n_stk * 2], dtype='float32')
+                for int_num in range(n_int):
+                    idx = int_num * len(bl_lower)
+                    for ii in range(len(bl_lower)):
+                        ant1, ant2 = ant_arr[ii]
+                        ant1, ant2 = ant1 - 1, ant2 - 1
+                        re_xx = re_vis[int_num, ant1, ant2, :, 0, 0]
+                        re_yy = re_vis[int_num, ant1, ant2, :, 0, 1]
+                        re_xy = re_vis[int_num, ant1, ant2, :, 1, 0]
+                        re_yx = re_vis[int_num, ant1, ant2, :, 1, 1]
+                        im_xx = im_vis[int_num, ant1, ant2, :, 0, 0]
+                        im_yy = im_vis[int_num, ant1, ant2, :, 0, 1]
+                        im_xy = im_vis[int_num, ant1, ant2, :, 1, 0]
+                        im_yx = im_vis[int_num, ant1, ant2, :, 1, 1]
+
+                        flux[idx + ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
+                #print flux.shape
+
+            self.d_uv_data["BASELINE"] = np.array([bl_lower for ii in range(n_int)]).flatten()
+            self.d_uv_data["FLUX"] = flux
+
+
+            h1("Generating FITS-IDI schema from XML")
+            if xmlbase is None:
+                dirname, filename = os.path.split(os.path.abspath(__file__))
+                xmlbase = os.path.join(dirname, 'config/config.xml')
+            self.xmlData = etree.parse(xmlbase)
+
+            hdu_primary        = make_primary(config=self.xmlData)
+            tbl_array_geometry = make_array_geometry(config=self.xmlData, num_rows=n_ant)
+            tbl_antenna        = make_antenna(config=self.xmlData, num_rows=n_ant)
+            tbl_frequency      = make_frequency(config=self.xmlData, num_rows=1)
+            tbl_source         = make_source(config=self.xmlData, num_rows=1)
+
+            #h1('Creating HDU list')
+            hdulist = pf.HDUList(
+                [hdu_primary,
+                 tbl_array_geometry,
+                 tbl_frequency,
+                 tbl_antenna,
+                 tbl_source
+                ])
+            #print hdulist.info()
+            #hdulist.verify()
+
+            # We are now ready to back-fill Interfits dictionaries using readfitsidi
+            self.fits = hdulist
+            self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+            self.stokes_vals = [-5, -6, -7, -8]
+            self.readFitsidi(from_file=False, load_uv_data=False)
+
+            h2("Populating interfits dictionaries")
+            self.setDefaults(n_uv_rows=len(bl_lower * n_int))
+            self.obs_code = ''
+            self.correlator = d.header["INSTRUMENT"]
+            self.instrument = d.header["INSTRUMENT"]
+            self.telescope  = d.header["TELESCOPE"]
+
+            # Compute time offset
+            h2("Computing UTC offsets")
+            dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+            byte_offset = int(d.header["OBS_OFFSET"])
+            bytes_per_avg = int(d.header["BYTES_PER_AVG"])
+            num_int = byte_offset / bytes_per_avg
+            time_offset = num_int * leda_config.INT_TIME
+            dt_obj = dt_obj + timedelta(seconds=time_offset)
+            date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
+            dd_obs   = dt_obj.strftime("%Y-%m-%d")
+
+            print "UTC START:   %s"%d.header["UTC_START"]
+            print "TIME OFFSET: %s"%timedelta(seconds=time_offset)
+            print "NEW START:   %s"%date_obs
+
+            self.date_obs   = date_obs
+            self.h_params["NSTOKES"] = 4
+            self.h_params["NBAND"]   = 1
+            self.h_params["NCHAN"]   = int(d.header["NCHAN"])
+            self.h_common["NO_CHAN"] = int(d.header["NCHAN"])
+            self.h_common["REF_FREQ"] = float(d.header["CFREQ"]) * 1e6
+            self.h_common["CHAN_BW"]  = float(d.header["BW"]) * 1e6 / self.h_params["NCHAN"]
+            self.h_common["REF_PIXL"] = self.h_params["NCHAN"] / 2
+            self.h_common["RDATE"]    = dd_obs  # Ignore time
+
+            self.d_frequency["CH_WIDTH"]  = self.h_common["CHAN_BW"]
+            self.d_frequency["TOTAL_BANDWIDTH"] = float(d.header["BW"]) * 1e6
+            self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+            self.stokes_vals = [-5, -6, -7, -8]
+
+            self.d_array_geometry["ANNAME"] = ["Stand%03d"%i for i in range(len(self.d_array_geometry["ANNAME"]))]
+            self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
+
+            print d.header
+            #print self.d_frequency
+            #print self.h_common
+            #print self.h_params
+
+
+    def _compute_lst_ha(self, src):
+        """ Helper function for computing LST, HA, and RA from timestamp
+
+        returns (ra_deg, dec_deg, lst_deg, ha_deg)
         """
-        h1("Loading DADA data")
-        if type(header_dict) is dict:
-            h2("Loading from shared memory")
-            d = HeaderDataUnit(header_dict, data_arr)
-            flux = data_arr
-            h2("Generating baseline IDs")
-            bls, ant_arr = self.generateBaselineIds(n_ant)
-            bl_lower = []
-            while len(bl_lower) < len(flux):
-                bl_lower += bls
+
+        # First, compute LST
+        tt_source = coords.parse_timestring(self.date_obs)
+        ts_source = calendar.timegm(tt_source)
+        lst_deg = self.computeSiderealTime(ts_source)
+
+        # Find HA and DEC of source
+        if src.upper() == 'ZEN':
+            H, d = 0, np.deg2rad(float(leda_config.latitude))
+            dec_deg  = float(leda_config.latitude)
+            ra_deg   = lst_deg
+            ha_deg   = 0
         else:
-            h2("Loading visibility data")
-            d   = dada.DadaSubBand(self.filename, n_int=n_int)
-            vis = d.data
             try:
-                n_chans = int(d.header["NCHAN"])
-                n_pol   = int(d.header["NPOL"])
-                n_ant   = int(d.header["NSTATION"])
+                src_names = leda_config.src_names
+                src_ras   = leda_config.src_ras
+                src_decs  = leda_config.src_decs
+                idx = src_names.index(src.upper())
+                h2("Phasing to %s"%src_names[idx])
+                ra_deg, dec_deg = src_ras[idx], src_decs[idx]
+
+                # Now we have the RA and DEC, need to convert into hour angle
+                ha_deg = lst_deg - ra_deg
+
             except ValueError:
-                print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
+                print "Error: Cannot phase to %s"%src
+                print "Choose one of: ZEN, ",
+                for src in src_names:
+                    print "%s, "%src,
+                print "\n"
                 raise
 
-            h2("Generating baseline IDs")
-            bls, ant_arr = self.generateBaselineIds(n_ant)
-            bl_lower = []
-            for dd in range(vis.shape[0] / n_int):
-                bl_lower += bls
+        return ra_deg, dec_deg, lst_deg, ha_deg
 
-        if not header_dict:
-            h2("Converting visibilities to FLUX columns")
-            # Need to convert into real & imag
-            # Not a major performance hit as these are super fast.
-            re_vis = np.real(vis)
-            im_vis = np.imag(vis)
-            # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
-            flux = np.zeros([len(bl_lower) * n_int, n_chans * n_stk * 2], dtype='float32')
-            for int_num in range(n_int):
-                idx = int_num * len(bl_lower)
-                for ii in range(len(bl_lower)):
-                    ant1, ant2 = ant_arr[ii]
-                    ant1, ant2 = ant1 - 1, ant2 - 1
-                    re_xx = re_vis[int_num, ant1, ant2, :, 0, 0]
-                    re_yy = re_vis[int_num, ant1, ant2, :, 0, 1]
-                    re_xy = re_vis[int_num, ant1, ant2, :, 1, 0]
-                    re_yx = re_vis[int_num, ant1, ant2, :, 1, 1]
-                    im_xx = im_vis[int_num, ant1, ant2, :, 0, 0]
-                    im_yy = im_vis[int_num, ant1, ant2, :, 0, 1]
-                    im_xy = im_vis[int_num, ant1, ant2, :, 1, 0]
-                    im_yx = im_vis[int_num, ant1, ant2, :, 1, 1]
+    def _compute_pointing_vec(self, src):
+        """ Compute the ALT and AZ for a source, then convert into cartesian pointing vector
+        """
+        tt_source = coords.parse_timestring(self.date_obs)
+        ts_source = calendar.timegm(tt_source)
+        dt_utc = datetime.utcfromtimestamp(ts_source)
 
-                    flux[idx + ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
-            #print flux.shape
+        ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
+        ra_str  = str(leda_config.ephem.hours(np.deg2rad(ra_deg)))
+        dec_str = str(leda_config.ephem.degrees(np.deg2rad(dec_deg)))
+        ov = leda_config.ovro
+        ov.date = dt_utc
 
-        self.d_uv_data["BASELINE"] = np.array([bl_lower for ii in range(n_int)]).flatten()
-        self.d_uv_data["FLUX"] = flux
+        s = coords.makeSource(src, ra_str, dec_str)
+        s.compute(ov)
+        xyz = coords.altaz2cartesian(s.alt, s.az)
+        return xyz
 
-
-        h1("Generating FITS-IDI schema from XML")
-        if xmlbase is None:
-            dirname, filename = os.path.split(os.path.abspath(__file__))
-            xmlbase = os.path.join(dirname, 'config/config.xml')
-        self.xmlData = etree.parse(xmlbase)
-
-        hdu_primary        = make_primary(config=self.xmlData)
-        tbl_array_geometry = make_array_geometry(config=self.xmlData, num_rows=n_ant)
-        tbl_antenna        = make_antenna(config=self.xmlData, num_rows=n_ant)
-        tbl_frequency      = make_frequency(config=self.xmlData, num_rows=1)
-        tbl_source         = make_source(config=self.xmlData, num_rows=1)
-
-        #h1('Creating HDU list')
-        hdulist = pf.HDUList(
-            [hdu_primary,
-             tbl_array_geometry,
-             tbl_frequency,
-             tbl_antenna,
-             tbl_source
-            ])
-        #print hdulist.info()
-        #hdulist.verify()
-
-        # We are now ready to back-fill Interfits dictionaries using readfitsidi
-        self.fits = hdulist
-        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
-        self.stokes_vals = [-5, -6, -7, -8]
-        self.readFitsidi(from_file=False, load_uv_data=False)
-
-        h2("Populating interfits dictionaries")
-        self.setDefaults(n_uv_rows=len(bl_lower * n_int))
-        self.obs_code = ''
-        self.correlator = d.header["INSTRUMENT"]
-        self.instrument = d.header["INSTRUMENT"]
-        self.telescope  = d.header["TELESCOPE"]
-        
-        # Compute time offset
-        h2("Computing UTC offsets")
-        dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
-        byte_offset = int(d.header["OBS_OFFSET"])
-        bytes_per_avg = int(d.header["BYTES_PER_AVG"])
-        num_int = byte_offset / bytes_per_avg
-        time_offset = num_int * leda_config.INT_TIME
-        dt_obj = dt_obj + timedelta(seconds=time_offset)
-        date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
-        dd_obs   = dt_obj.strftime("%Y-%m-%d")
-        
-        print "UTC START:   %s"%d.header["UTC_START"]
-        print "TIME OFFSET: %s"%timedelta(seconds=time_offset)
-        print "NEW START:   %s"%date_obs
-        
-        self.date_obs   = date_obs
-        self.h_params["NSTOKES"] = 4
-        self.h_params["NBAND"]   = 1
-        self.h_params["NCHAN"]   = int(d.header["NCHAN"])
-        self.h_common["NO_CHAN"] = int(d.header["NCHAN"])
-        self.h_common["REF_FREQ"] = float(d.header["CFREQ"]) * 1e6
-        self.h_common["CHAN_BW"]  = float(d.header["BW"]) * 1e6 / self.h_params["NCHAN"]
-        self.h_common["REF_PIXL"] = self.h_params["NCHAN"] / 2
-        self.h_common["RDATE"]    = dd_obs  # Ignore time
-
-        self.d_frequency["CH_WIDTH"]  = self.h_common["CHAN_BW"]
-        self.d_frequency["TOTAL_BANDWIDTH"] = float(d.header["BW"]) * 1e6
-        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
-        self.stokes_vals = [-5, -6, -7, -8]
-
-        self.d_array_geometry["ANNAME"] = ["Stand%03d"%i for i in range(len(self.d_array_geometry["ANNAME"]))]
-        self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
-
-        print d.header
-        #print self.d_frequency
-        #print self.h_common
-        #print self.h_params
+    def _compute_freqs(self):
+        """ generate the frequency channels array from metadata """
+            # Generate frequency array from metadata
+        ref_delt = self.h_common["CHAN_BW"]
+        ref_pix  = self.h_common["REF_PIXL"]
+        ref_val  = self.h_common["REF_FREQ"]
+        num_pix  = self.h_common["NO_CHAN"]
+        freqs    = np.arange(0,num_pix,1) * ref_delt + (ref_val - ref_pix * ref_delt)
+        return freqs
 
     def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
@@ -435,36 +508,9 @@ class LedaFits(InterFits):
         """
 
         h1("Generating UVW coordinates")
-        # First, compute LST
-        tt_source = time.strptime(self.date_obs, "%Y-%m-%dT%H:%M:%S")
-        ts_source = calendar.timegm(tt_source)
-        lst_deg = self.computeSiderealTime(ts_source)
-
-        # Find HA and DEC of source
-        if src.upper() == 'ZEN':
-            H, d = 0, np.deg2rad(float(leda_config.latitude))
-            dec_deg  = float(leda_config.latitude)
-            ra_deg   = lst_deg
-        else:
-            try:
-                src_names = leda_config.src_names
-                src_ras   = leda_config.src_ras
-                src_decs  = leda_config.src_decs
-                idx = src_names.index(src.upper())
-                h2("Phasing to %s"%src_names[idx])
-                ra_deg, dec_deg = src_ras[idx], src_decs[idx]
-
-                # Now we have the RA and DEC, need to convert into hour angle
-                H = np.deg2rad(lst_deg - ra_deg)
-                d = np.deg2rad(dec_deg)
-
-            except ValueError:
-                print "Error: Cannot phase to %s"%src
-                print "Choose one of: ZEN, ",
-                for src in src_names:
-                    print "%s, "%src,
-                print "\n"
-                raise
+        ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
+        H = np.deg2rad(ha_deg)
+        d = np.deg2rad(dec_deg)
 
         print "LST:        %2.3f deg"%lst_deg
         print "Source RA:  %2.3f deg"%ra_deg
@@ -503,7 +549,7 @@ class LedaFits(InterFits):
                 ii, jj = ant_pair[0] - 1, ant_pair[1] - 1
                 bl_vec = xyz[ii] - xyz[jj]
                 bl_veclist.append(bl_vec)
-                uvw_list.append(uvw.computeUVW(bl_vec, H, d, conjugate=conjugate, t_matrix=t_matrix))
+                uvw_list.append(coords.computeUVW(bl_vec, H, d, conjugate=conjugate, t_matrix=t_matrix))
             uvw_arr = np.array(uvw_list)
             
             # Fill with data
@@ -519,7 +565,7 @@ class LedaFits(InterFits):
         h2("Generating timestamps")
         dd, tt = [], []        
         for ii in range(n_iters):
-            jd, jt = uvw.convertToJulianTuple(self.date_obs)
+            jd, jt = coords.convertToJulianTuple(self.date_obs)
             tdelta = leda_config.INT_TIME * ii
             jds = [jd for jj in range(len(ant_arr))]
             jts = [jt + tdelta for jj in range(len(ant_arr))]
@@ -578,14 +624,6 @@ class LedaFits(InterFits):
             self.d_uv_data['INTTIM'][:] = value
         if key == 'TELESCOP':
             self.h_uv_data['TELESCOP'] = value
-
-    def readAntennaLocations(self, filename):
-        """ Read antenna locations file """
-        atab = np.genfromtxt(filename, comments='#', dtype='str')
-        stand_ids  = atab[:, 0]
-        stand_east = atab[:, 1].astype('float')
-        stand_west = atab[:, 2].astype('float')
-        stand_elev = atab[:, 3].astype('float')
 
     def remove_miriad_baselines(self):
         """ Remove baseline data for all antennas with IDs > 255
@@ -665,6 +703,67 @@ class LedaFits(InterFits):
         self.d_flag["PFLAGS"].append((1,1,1,1))
         self.d_flag["SEVERITY"].append(severity)
         self.d_flag["CHANS"].append((0, 4096))
+
+    def phase_to_src(self, src='ZEN', debug=False):
+        """ Apply phase corrections to phase to source """
+        h1("Phasing flux data to %s"%self.d_source["SOURCE"][0])
+
+        ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
+        freqs = self._compute_freqs()
+        w = 2 * np.pi * freqs # Angular freq
+
+        try:
+            assert self.d_uv_data["FLUX"].dtype == 'float32'
+        except AssertionError:
+            print self.d_uv_data["FLUX"].dtype
+            raise
+        flux  = self.d_uv_data["FLUX"].view('complex64')
+
+        bls, ant_arr = self.generateBaselineIds()
+        p_vec        = self._compute_pointing_vec(src)
+        for ii in range(len(bls)):
+            ant1, ant2 = ant_arr[ii]
+            bl         = bls[ii]
+
+            # Compute geometric delay
+            ant_locs = self.d_array_geometry["STABXYZ"]
+            bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
+            tg        = np.dot(bl_vec, p_vec) / leda_config.SPEED_OF_LIGHT
+
+            #if not ii %1000:
+            #    print tg
+
+            # Compute phases for X and Y pol on antennas A and B
+            p = np.exp(-1j * w * tg) # Needs to be -ve as compensating delay
+            phase_corrs = np.column_stack((p, p, p, p)).flatten()
+
+            # Debug routine for looking at phases
+            if ant1 == 1 and debug is True:
+                print ii
+                print ant_locs[ant1-1], ant_locs[ant2-1]
+                print bl_vec
+                print p_vec
+                print np.dot(bl_vec, p_vec)
+
+                import pylab as plt
+                plt.subplot(311)
+                bl_length = np.sqrt(bl_vec[0]**2 + bl_vec[1]**2 + bl_vec[2]**2)
+                plt.title("BL %i-%i    BL-LEN: %2.2f"%(ant1, ant2, bl_length))
+                plt.plot(np.angle(p))
+                plt.subplot(312)
+                xx = flux[ii, ::4]
+                plt.plot(np.angle(xx))
+                plt.subplot(313)
+                plt.plot(np.angle(xx * p))
+                plt.show()
+                time.sleep(2)
+
+            flux[ii] = flux[ii] * phase_corrs
+
+        # Now we have applied geometric delays, we need to
+        # convert from viewing as complex to viewing as floats
+        assert flux.dtype == 'complex64'
+        self.d_uv_data["FLUX"] = flux.view('float32')
 
     def apply_cable_delays(self):
         """ Apply antenna cable delays
