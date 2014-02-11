@@ -511,7 +511,7 @@ class InterFitsGui(QtGui.QWidget):
 
         #TODO: Make this work quicker!
         #bl_ids = self.uv.search_baselines(ref_ant)
-        bl_ids = [256*ref_ant + i for i in range(1, n_rows * n_cols + 1)]
+        bl_ids = set([256*ref_ant + i for i in range(1, n_rows * n_cols + 1)])
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
         #x_data    = self.uv.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes
@@ -701,6 +701,7 @@ class InterFitsGui(QtGui.QWidget):
         rf  = self.uv.h_common['REF_FREQ'] /1e6
         chw = self.uv.d_frequency['CH_WIDTH']
         bw  = self.uv.d_frequency['TOTAL_BANDWIDTH'] / 1e6
+
         #print rf, chw, bw
 
         ticks = ax.get_xticks()

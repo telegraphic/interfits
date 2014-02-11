@@ -382,6 +382,14 @@ class InterFits(object):
                 self.h_uv_data['DATE-OBS'] = self.date_obs
             except AttributeError:
                 self.date_obs = 0.0
+            except KeyError:
+                print "Warning: DATE-OBS keyword not found in UV_DATA header"
+                try:
+                    self.date_obs = self.tbl_uv_data.header['RDATE'].strip()
+                    print "Warning: Using RDATE instead of DATE-OBS (not found)"
+                except KeyError:
+                    self.date_obs = 0.0
+
         else:
             self.telescope, self.date_obs = '', 0.0
         self.instrument = self.tbl_array_geometry.header['ARRNAM'].strip()
@@ -1056,24 +1064,27 @@ class InterFits(object):
 
     def formatStokes(self):
         """ Return data as complex stokes vector """
-
         data = self.d_uv_data["FLUX"]
 
-        xx_data = data[:, 0::8] + 1j * data[:, 1::8]
-        yy_data = data[:, 2::8] + 1j * data[:, 3::8]
-        xy_data = data[:, 4::8] + 1j * data[:, 5::8]
-        yx_data = data[:, 6::8] + 1j * data[:, 7::8]
+        #xx_data = data[:, 0::8] + 1j * data[:, 1::8]
+        #yy_data = data[:, 2::8] + 1j * data[:, 3::8]
+        #xy_data = data[:, 4::8] + 1j * data[:, 5::8]
+        #yx_data = data[:, 6::8] + 1j * data[:, 7::8]
 
         if self.d_uv_data["FLUX"].dtype == 'float32':
             data = data.view('complex64')
         elif self.d_uv_data["FLUX"].dtype == 'float64':
             data = data.view('complex128')
-        print data.shape
 
-        data2 = np.array((data[:, ::4], data[:, 1::4], data[:, 2::4], data[:, 3::4]))
-        print data2.shape
-
-        return data2
+        if self.h_params["NSTOKES"] == 1:
+            return data
+        elif self.h_params["NSTOKES"] == 2:
+            return  np.array((data[:, ::2], data[:, 1::2]))
+        elif self.h_params["NSTOKES"] == 4:
+            data2 = np.array((data[:, ::4], data[:, 1::4], data[:, 2::4], data[:, 3::4]))
+            return data2
+        else:
+            raise ValueError("NSTOKES in h_params is not valid!")
 
     def get_antenna_id(self, bl_id):
         """ Convert baseline ID into an antenna pair.
