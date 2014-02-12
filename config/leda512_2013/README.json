@@ -1,0 +1,4 @@
+LEDAOVRO 512 config for August 2013 through Dec 2014.
+
+In January 2014, the antenna mapping was changed, so these files will 
+no longer generate baseline IDS that match up to antennas (this is bad).
