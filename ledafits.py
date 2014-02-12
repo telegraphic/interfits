@@ -443,7 +443,7 @@ class LedaFits(InterFits):
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry)
             self.h_antenna        = load_json(ledafits_config.json_h_antenna)
             self.d_antenna        = load_json(ledafits_config.json_d_antenna)
-        if self.telescope in ('LWA1', 'LWANM', 'LEDA64'):
+        elif self.telescope in ('LWA1', 'LWANM', 'LEDA64'):
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry_nm)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry_nm)
             self.h_antenna        = load_json(ledafits_config.json_h_antenna_nm)
