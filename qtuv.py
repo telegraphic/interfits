@@ -568,7 +568,7 @@ class InterFitsGui(QtGui.QWidget):
 
         # Extract the relevant baselines using a truth array
         # bls = bls.tolist()
-        bl_ids = [256*i + i for i in range(1, n_rows * n_cols + 1)]
+        bl_ids = set([256*i + i for i in range(1, n_rows * n_cols + 1)])
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
         #print self.uv.d_uv_data['DATA'].shape
