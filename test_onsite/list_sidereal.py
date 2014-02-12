@@ -11,10 +11,10 @@ import ephem
 import numpy as np
 
 sys.path.append("/home/leda/dan/interfits")
-import leda_config
+import ledafits_config
 
 # Number of bytes per n_int integs, integ time, number integs
-OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT_PER_FILE 
+OFFSET_DELTA, INT_TIME, N_INT = ledafits_config.OFFSET_DELTA, ledafits_config.INT_TIME, ledafits_config.N_INT_PER_FILE
 (latitude, longitude, elevation) = ('37.2', '-118.2', 1222)
 
 def list_sidereal(search_dir):

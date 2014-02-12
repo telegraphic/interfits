@@ -16,10 +16,10 @@ import re
 
 from interfits import *
 from lib import dada, coords
-import leda_config
+import ledafits_config
 
 # Load globals from config file
-OFFSET_DELTA, INT_TIME, N_INT = leda_config.OFFSET_DELTA, leda_config.INT_TIME, leda_config.N_INT_PER_FILE 
+OFFSET_DELTA, INT_TIME, N_INT = ledafits_config.OFFSET_DELTA, ledafits_config.INT_TIME, ledafits_config.N_INT_PER_FILE
 
 class HeaderDataUnit(object):
     """ Very basic object with header and data units """
@@ -324,7 +324,7 @@ class LedaFits(InterFits):
             byte_offset = int(d.header["OBS_OFFSET"])
             bytes_per_avg = int(d.header["BYTES_PER_AVG"])
             num_int = byte_offset / bytes_per_avg
-            time_offset = num_int * leda_config.INT_TIME
+            time_offset = num_int * ledafits_config.INT_TIME
             dt_obj = dt_obj + timedelta(seconds=time_offset)
             date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
             dd_obs   = dt_obj.strftime("%Y-%m-%d")
@@ -351,10 +351,8 @@ class LedaFits(InterFits):
             self.d_array_geometry["ANNAME"] = ["Stand%03d"%i for i in range(len(self.d_array_geometry["ANNAME"]))]
             self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
 
-            print d.header
-            #print self.d_frequency
-            #print self.h_common
-            #print self.h_params
+            # Load array geometry from file, based on TELESCOP name
+            self.loadAntArr()
 
 
     def _compute_lst_ha(self, src):
@@ -370,15 +368,15 @@ class LedaFits(InterFits):
 
         # Find HA and DEC of source
         if src.upper() == 'ZEN':
-            H, d = 0, np.deg2rad(float(leda_config.latitude))
-            dec_deg  = float(leda_config.latitude)
+            H, d = 0, np.deg2rad(float(ledafits_config.latitude))
+            dec_deg  = float(ledafits_config.latitude)
             ra_deg   = lst_deg
             ha_deg   = 0
         else:
             try:
-                src_names = leda_config.src_names
-                src_ras   = leda_config.src_ras
-                src_decs  = leda_config.src_decs
+                src_names = ledafits_config.src_names
+                src_ras   = ledafits_config.src_ras
+                src_decs  = ledafits_config.src_decs
                 idx = src_names.index(src.upper())
                 h2("Phasing to %s"%src_names[idx])
                 ra_deg, dec_deg = src_ras[idx], src_decs[idx]
@@ -404,9 +402,9 @@ class LedaFits(InterFits):
         dt_utc = datetime.utcfromtimestamp(ts_source)
 
         ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
-        ra_str  = str(leda_config.ephem.hours(np.deg2rad(ra_deg)))
-        dec_str = str(leda_config.ephem.degrees(np.deg2rad(dec_deg)))
-        ov = leda_config.ovro
+        ra_str  = str(ledafits_config.ephem.hours(np.deg2rad(ra_deg)))
+        dec_str = str(ledafits_config.ephem.degrees(np.deg2rad(dec_deg)))
+        ov = ledafits_config.ovro
         ov.date = dt_utc
 
         s = coords.makeSource(src, ra_str, dec_str)
@@ -431,18 +429,27 @@ class LedaFits(InterFits):
             
         self.setDefaults(n_uv_rows)
 
-        self.d_frequency["CH_WIDTH"]        = self.s2arr(leda_config.CH_WIDTH)
-        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(leda_config.SUB_BW)
-        self.h_uv_data["TELESCOP"]          = leda_config.TELESCOP
-        self.h_array_geometry["ARRNAM"]     = leda_config.ARRNAM
+        self.d_frequency["CH_WIDTH"]        = self.s2arr(ledafits_config.CH_WIDTH)
+        self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(ledafits_config.SUB_BW)
+        self.h_uv_data["TELESCOP"]          = ledafits_config.TELESCOP
+        self.h_array_geometry["ARRNAM"]     = ledafits_config.ARRNAM
     
     def loadAntArr(self):
         """ Loads ANTENNA and ARRAY_GEOMETRY tables as set in leda_config """
         h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
-        self.h_array_geometry = load_json(leda_config.json_h_array_geometry)
-        self.d_array_geometry = load_json(leda_config.json_d_array_geometry)
-        self.h_antenna        = load_json(leda_config.json_h_antenna)     
-        self.d_antenna        = load_json(leda_config.json_d_antenna)      
+
+        if self.telescope in ('LEDA', 'LWAOVRO', 'LEDA512'):
+            self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry)
+            self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry)
+            self.h_antenna        = load_json(ledafits_config.json_h_antenna)
+            self.d_antenna        = load_json(ledafits_config.json_d_antenna)
+        if self.telescope in ('LWA1', 'LWANM', 'LEDA64'):
+            self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry_nm)
+            self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry_nm)
+            self.h_antenna        = load_json(ledafits_config.json_h_antenna_nm)
+            self.d_antenna        = load_json(ledafits_config.json_d_antenna_nm)
+        else:
+            raise ValueError("Cannot load array geometry for %s"%self.telescope)
 
     def computeSiderealTime(self, ts=None):
         """ Computes the LST for a given timestamp.
@@ -458,7 +465,7 @@ class LedaFits(InterFits):
             dt_utc = datetime.utcfromtimestamp(ts)
         else:
             dt_utc = datetime.strptime(self.date_obs, "%Y-%m-%dT%H:%M:%S")
-        ov = leda_config.ovro
+        ov = ledafits_config.ovro
         ov.date = dt_utc
         lst, lst_deg = ov.sidereal_time(), ov.sidereal_time() / 2 / np.pi * 360
         print "UTC: %s"%dt_utc
@@ -566,7 +573,7 @@ class LedaFits(InterFits):
         dd, tt = [], []        
         for ii in range(n_iters):
             jd, jt = coords.convertToJulianTuple(self.date_obs)
-            tdelta = leda_config.INT_TIME * ii
+            tdelta = ledafits_config.INT_TIME * ii
             jds = [jd for jj in range(len(ant_arr))]
             jts = [jt + tdelta for jj in range(len(ant_arr))]
             dd.append(jds)
@@ -608,7 +615,7 @@ class LedaFits(InterFits):
         
         h2("Loading UVW coordinates from file")
         if not filename:
-            filename = leda_config.json_uvw_coordinates
+            filename = ledafits_config.json_uvw_coordinates
         d = load_json(filename)
         self.d_uv_data["UU"]       = d["UU"]      
         self.d_uv_data["VV"]       = d["VV"]      
@@ -728,7 +735,7 @@ class LedaFits(InterFits):
             # Compute geometric delay
             ant_locs = self.d_array_geometry["STABXYZ"]
             bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
-            tg        = np.dot(bl_vec, p_vec) / leda_config.SPEED_OF_LIGHT
+            tg        = np.dot(bl_vec, p_vec) / ledafits_config.SPEED_OF_LIGHT
 
             #if not ii %1000:
             #    print tg
@@ -780,8 +787,8 @@ class LedaFits(InterFits):
         h1("Applying cable delays")
         #t0 = time.time()
         # Load antenna Electrical Lengths
-        sol   = leda_config.SPEED_OF_LIGHT
-        els   = load_json(leda_config.json_antenna_el_lens)["EL"]
+        sol   = ledafits_config.SPEED_OF_LIGHT
+        els   = load_json(ledafits_config.json_antenna_el_lens)["EL"]
         tdelts = els / sol
 
         # Generate frequency array from metadata

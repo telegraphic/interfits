@@ -699,8 +699,11 @@ class InterFitsGui(QtGui.QWidget):
     def updateFreqAxis(self, ax, n_ticks=5):
         """ Update frequency axis of imshow plot """
         rf  = self.uv.h_common['REF_FREQ'] /1e6
-        chw = self.uv.d_frequency['CH_WIDTH']
+        chw = self.uv.d_frequency['CH_WIDTH'] / 1e6
         bw  = self.uv.d_frequency['TOTAL_BANDWIDTH'] / 1e6
+        rp  = self.uv.h_common['REF_PIXL']
+        nchan = self.uv.h_common['NO_CHAN']
+
 
         #print rf, chw, bw
 
@@ -710,7 +713,12 @@ class InterFitsGui(QtGui.QWidget):
         if tmin < 0: tmin = 0
         #print tmin, tmax
         tlocs = map(int, np.linspace(tmin, tmax, n_ticks))
-        tlabs = np.linspace(rf-bw/2, rf+bw/2, n_ticks)
+
+        if rp == 1:
+            tlabs = np.linspace(rf, rf+bw, n_ticks)
+        else:
+            rf_low = rf - chw * rp
+            tlabs = np.linspace(rf_low, rf_low+bw, n_ticks)
         #print tlocs
         #print tlabs
         ax.set_xticks(tlocs)
