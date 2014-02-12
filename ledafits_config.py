@@ -54,11 +54,13 @@ json_h_array_geometry  = os.path.join(fileroot, 'config/leda512/h_array_geometry
 json_d_array_geometry  = os.path.join(fileroot, 'config/leda512/d_array_geometry.json')
 json_h_antenna         = os.path.join(fileroot, 'config/leda512/h_antenna.json')
 json_d_antenna         = os.path.join(fileroot, 'config/leda512/d_antenna.json')
+json_antenna_el_lens   = os.path.join(fileroot, 'config/leda512/z_antenna_el_lens.json')
 
 json_h_array_geometry_nm  = os.path.join(fileroot, 'config/leda64_nm/h_array_geometry.json')
 json_d_array_geometry_nm  = os.path.join(fileroot, 'config/leda64_nm/d_array_geometry.json')
 json_h_antenna_nm         = os.path.join(fileroot, 'config/leda64_nm/h_antenna.json')
 json_d_antenna_nm         = os.path.join(fileroot, 'config/leda64_nm/d_antenna.json')
+json_antenna_el_lens_nm   = os.path.join(fileroot, 'config/leda64_nm/z_antenna_el_lens.json')
 
 # A few sources to phase to
 src_names = ['CYG', 'CAS', 'TAU', 'VIR']
