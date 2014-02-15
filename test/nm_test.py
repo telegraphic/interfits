@@ -21,21 +21,32 @@ def generate_fitsidi(filename_in, filename_out=None):
     
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
-    uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
-    uvw.phase_to_src(src='CYG')
+    uvw.generateUVW(src='ZEN', use_stored=False, update_src=True)
     uvw.exportFitsidi(filename_out)
     uvw.verify()
+
+def phase_fitsidi(filename_in, filename_out):
+
+    uvw = LedaFits(filename_in)
+    uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
+    uvw.apply_cable_delays()
+    uvw.phase_to_src(src='CYG', debug=False)
+    uvw.exportFitsidi(filename_out)
+    uvw.verify()
+
 
 if __name__ == '__main__':
     import sys, os
     
     try:
-        filename_in  = sys.argv[1]
-        filename_out = sys.argv[2]
+        filename_in  = 'nm-2014-01-29-22.dada'
+        filename_zen = 'nm-zen.fitsidi'
+        filename_cyg = 'nm-cyg.fitsidi'
     except:
         print "ERROR: you must enter a filename"
         print "USAGE: python generate_fitsidi.py <filename_in> <filename_out>"
         exit()
     
-    generate_fitsidi(filename_in, filename_out)
+    #generate_fitsidi(filename_in, filename_zen)
+    phase_fitsidi(filename_zen, filename_cyg)
 

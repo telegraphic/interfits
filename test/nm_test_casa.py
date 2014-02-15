@@ -1,14 +1,22 @@
-fitsidifile = 'nm.fitsidi'
-vis = 'nm.vis'
+# Delete old versions of files
+_ip.system("rm -i -rf nm-cyg.img.*")
+_ip.system("rm -i -rf nm-cyg.vis")
+_ip.system("rm -i -rf nm-cyg.B")
+
+# Import data
+fitsidifile = 'nm-cyg.fitsidi'
+vis = 'nm-cyg.vis'
 importfitsidi()
 
-caltable = 'nm.B'
+# Apply bandpass correction
+caltable = 'nm-cyg.B'
 bandpass()
-
-gaintable = 'nm.B'
+gaintable = 'nm-cyg.B'
 applycal()
 
-imagename = 'nm.img'
+# Make dirty image
+imagename = 'nm-cyg.img'
 niter = 0
+imsize = [512, 512]
 cell = '15.0arcmin'
 clean()

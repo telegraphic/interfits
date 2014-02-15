@@ -130,6 +130,7 @@ class InterFitsGui(QtGui.QWidget):
         self.plot_select.addItem("Multi baseline: Autocorrs")
         self.plot_select.addItem("Multi baseline: Amplitude")
         self.plot_select.addItem("Multi baseline: Phase")
+        self.plot_select.addItem("Multi baseline: Delay spectrum")
         self.plot_select.addItem("UV coverage")
         self.plot_select.activated.connect(self.updateSpinners)
         
@@ -379,6 +380,16 @@ class InterFitsGui(QtGui.QWidget):
                 cbar.set_ticks([-np.pi,-np.pi/2,0,np.pi/2,np.pi-0.05])
                 cbar.set_ticklabels(["$-\pi$","$-\pi/2$",0,"$\pi/2$","$\pi$"])
 
+        if stat == 'delay':
+            abs, fft, fft_shift, log10 = np.abs, np.fft.fft, np.fft.fftshift, np.log10
+            if self.scale_select.currentIndex() != 1:
+                img = ax.imshow(abs(fft(data, axis=1)))
+            else:
+                img = ax.imshow(10*log10(abs(fft(data, axis=1))))
+            if label_axes: plt.title("Delay")
+            if show_cbar:
+                cbar = self.sp_fig.colorbar(img, orientation='horizontal')
+
         ax.set_aspect(data.shape[1] / data.shape[0] * 3. / 4)
         if label_axes:
             self.updateFreqAxis(ax, n_ticks=5)
@@ -425,10 +436,12 @@ class InterFitsGui(QtGui.QWidget):
         else:
             self.plot_spectrum(ax, x)
         
-        ax = plt.subplot(223)
+        ax = plt.subplot(234)
         img = self.plot_imshow(ax, x, stat='amp', show_cbar=True)
-        ax = plt.subplot(224)
+        ax = plt.subplot(235)
         img = self.plot_imshow(ax, x, stat='phase', show_cbar=True)
+        ax = plt.subplot(236)
+        img = self.plot_imshow(ax, x, stat='delay', show_cbar=True)
         plt.subplots_adjust(left=0.05, right=0.98, top=0.9, bottom=0.05, wspace=0.25, hspace=0.3)
         
         return fig, ax
@@ -511,12 +524,20 @@ class InterFitsGui(QtGui.QWidget):
 
         #TODO: Make this work quicker!
         #bl_ids = self.uv.search_baselines(ref_ant)
-        bl_ids = set([256*ref_ant + i for i in range(1, n_rows * n_cols + 1)])
+        bl_lower = []
+        if ref_ant > 1:
+            bl_lower = [256*i + ref_ant for i in range(1, ref_ant)]
+        bl_upper = [256*ref_ant + i for i in range(1, n_rows * n_cols + 1)]
+        bl_lower.extend(bl_upper)
+        bl_ids = set(bl_lower)
         bl_truths = np.array([(b in bl_ids) for b in bls])
         
         #x_data    = self.uv.d_uv_data['DATA'][bl_truths,0,0,0,:,axis]  # Baselines, freq and stokes
         #x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
         x_cplx = self.stokes[axis][bl_truths]
+
+        print ref_ant
+        print x_cplx.shape
         
         # Plot the figure
         fig = self.sp_fig
@@ -669,6 +690,9 @@ class InterFitsGui(QtGui.QWidget):
             self.plot_visibilities(plot_type='phase', axis=axis, ref_ant=ref_ant)
 
         if self.plot_select.currentIndex() == 5:
+            self.plot_visibilities(plot_type='delay', axis=axis, ref_ant=ref_ant)
+
+        if self.plot_select.currentIndex() == 6:
             self.plot_uv()   
                      
         self.updateSpinners()

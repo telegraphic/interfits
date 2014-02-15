@@ -21,10 +21,8 @@ def generate_fitsidi(filename_in, filename_out=None):
     
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
-    uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
-    uvw.flag_antenna(84)
-    uvw.apply_cable_delays()
-    uvw.remove_miriad_baselines()
+    uvw.generateUVW(src='ZEN', use_stored=False, update_src=True)
+    #uvw.apply_cable_delays()
     uvw.exportFitsidi(filename_out)
     
 if __name__ == '__main__':

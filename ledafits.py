@@ -728,49 +728,52 @@ class LedaFits(InterFits):
 
         bls, ant_arr = self.generateBaselineIds()
         p_vec        = self._compute_pointing_vec(src)
-        for ii in range(len(bls)):
-            ant1, ant2 = ant_arr[ii]
-            bl         = bls[ii]
 
-            # Compute geometric delay
-            ant_locs = self.d_array_geometry["STABXYZ"]
-            bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
-            tg        = np.dot(bl_vec, p_vec) / ledafits_config.SPEED_OF_LIGHT
+        n_int = len(flux) / len(bls)
+        for nn in range(n_int):
+            for ii in range(len(bls)):
+                ant1, ant2 = ant_arr[ii]
+                bl         = bls[ii]
 
-            #if not ii %1000:
-            #    print tg
+                # Compute geometric delay
+                ant_locs = self.d_array_geometry["STABXYZ"]
+                bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
+                tg        = np.dot(bl_vec, p_vec) / ledafits_config.SPEED_OF_LIGHT
 
-            # Compute phases for X and Y pol on antennas A and B
-            p = np.exp(-1j * w * tg) # Needs to be -ve as compensating delay
-            phase_corrs = np.column_stack((p, p, p, p)).flatten()
+                #if not ii %1000:
+                #    print tg
 
-            # Debug routine for looking at phases
-            if ant1 == 1 and debug is True:
-                print ii
-                print ant_locs[ant1-1], ant_locs[ant2-1]
-                print bl_vec
-                print p_vec
-                print np.dot(bl_vec, p_vec)
+                # Compute phases for X and Y pol on antennas A and B
+                p = np.exp(-1j * w * tg) # Needs to be -ve as compensating delay
+                phase_corrs = np.column_stack((p, p, p, p)).flatten()
 
-                import pylab as plt
-                plt.subplot(311)
-                bl_length = np.sqrt(bl_vec[0]**2 + bl_vec[1]**2 + bl_vec[2]**2)
-                plt.title("BL %i-%i    BL-LEN: %2.2f"%(ant1, ant2, bl_length))
-                plt.plot(np.angle(p))
-                plt.subplot(312)
-                xx = flux[ii, ::4]
-                plt.plot(np.angle(xx))
-                plt.subplot(313)
-                plt.plot(np.angle(xx * p))
-                plt.show()
-                time.sleep(2)
+                # Debug routine for looking at phases
+                if ant1 == 1 and debug is True:
+                    print ii
+                    print ant_locs[ant1-1], ant_locs[ant2-1]
+                    print bl_vec
+                    print p_vec
+                    print np.dot(bl_vec, p_vec)
 
-            flux[ii] = flux[ii] * phase_corrs
+                    import pylab as plt
+                    plt.subplot(311)
+                    bl_length = np.sqrt(bl_vec[0]**2 + bl_vec[1]**2 + bl_vec[2]**2)
+                    plt.title("BL %i-%i    BL-LEN: %2.2f"%(ant1, ant2, bl_length))
+                    plt.plot(np.angle(p))
+                    plt.subplot(312)
+                    xx = flux[ii, ::4]
+                    plt.plot(np.angle(xx))
+                    plt.subplot(313)
+                    plt.plot(np.angle(xx * p))
+                    plt.show()
+                    time.sleep(2)
 
-        # Now we have applied geometric delays, we need to
-        # convert from viewing as complex to viewing as floats
-        assert flux.dtype == 'complex64'
-        self.d_uv_data["FLUX"] = flux.view('float32')
+                flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
+
+            # Now we have applied geometric delays, we need to
+            # convert from viewing as complex to viewing as floats
+            assert flux.dtype == 'complex64'
+            self.d_uv_data["FLUX"] = flux.view('float32')
 
     def apply_cable_delays(self):
         """ Apply antenna cable delays
@@ -809,46 +812,29 @@ class LedaFits(InterFits):
 
         bls, ant_arr = self.generateBaselineIds()
         w = 2 * np.pi * freqs # Angular freq
+        n_int = len(flux) / len(bls)
+        for nn in range(n_int):
+            for ii in range(len(bls)):
+                ant1, ant2 = ant_arr[ii]
+                bl         = bls[ii]
+                td1, td2   = tdelts[ant1-1], tdelts[ant2-1]
 
-        #t1 = time.time()
-        for ii in range(len(bls)):
-            ant1, ant2 = ant_arr[ii]
-            bl         = bls[ii]
-            td1, td2   = tdelts[ant1-1], tdelts[ant2-1]
+                # Compute phases for X and Y pol on antennas A and B
+                pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
 
-            # Compute phases for X and Y pol on antennas A and B
-            pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
+                # Corrections require negative sign (otherwise reapplying delays)
+                e_xx = np.exp(1j * (pxa - pxb))
+                e_yy = np.exp(1j * (pya - pyb))
+                e_xy = np.exp(1j * (pxa - pyb))
+                e_yx = np.exp(1j * (pya - pxb))
 
-            # Corrections require negative sign (otherwise reapplying delays)
-            e_xx = np.exp(-1j * (pxa - pxb))
-            e_yy = np.exp(-1j * (pya - pyb))
-            e_xy = np.exp(-1j * (pxa - pyb))
-            e_yx = np.exp(-1j * (pya - pxb))
+                phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
+                flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
 
-            phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
-
-            #if not ii%5000:
-            #    plt.subplot(211)
-            #    plt.plot(np.angle(phase_corrs[::4]))
-            #    plt.subplot(212)
-            #    plt.plot(np.angle(flux[ii][::4]))
-            flux[ii] = flux[ii] * phase_corrs
-            #if not ii%5000:
-            #    plt.plot(np.angle(flux[ii][::4]))
-            #    plt.xlabel("Ant %s, Ant %s"%(ant1, ant2))
-            #    plt.show()
-            #    print td1, td2
-            #    #exit()
-            #print flux[ii].shape
-            #print phases.shape
 
         assert flux.dtype == 'complex64'
         self.d_uv_data["FLUX"] = flux.view('float32')
-            #time.sleep(2)
-        #t2 = time.time()
 
-        #print t2 - t0
-        #print t2 - t1
 
     def extractTotalPower(self, antenna_id, timestamps=False):
         """ Extract autocorrelation of a give antenna
