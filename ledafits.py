@@ -267,14 +267,16 @@ class LedaFits(InterFits):
                     for ii in range(len(bl_lower)):
                         ant1, ant2 = ant_arr[ii]
                         ant1, ant2 = ant1 - 1, ant2 - 1
+
                         re_xx = re_vis[int_num, ant1, ant2, :, 0, 0]
-                        re_yy = re_vis[int_num, ant1, ant2, :, 0, 1]
-                        re_xy = re_vis[int_num, ant1, ant2, :, 1, 0]
-                        re_yx = re_vis[int_num, ant1, ant2, :, 1, 1]
+                        re_yy = re_vis[int_num, ant1, ant2, :, 1, 1]
+                        re_xy = re_vis[int_num, ant1, ant2, :, 0, 1]
+                        re_yx = re_vis[int_num, ant1, ant2, :, 1, 0]
+
                         im_xx = im_vis[int_num, ant1, ant2, :, 0, 0]
-                        im_yy = im_vis[int_num, ant1, ant2, :, 0, 1]
-                        im_xy = im_vis[int_num, ant1, ant2, :, 1, 0]
-                        im_yx = im_vis[int_num, ant1, ant2, :, 1, 1]
+                        im_yy = im_vis[int_num, ant1, ant2, :, 1, 1]
+                        im_xy = im_vis[int_num, ant1, ant2, :, 0, 1]
+                        im_yx = im_vis[int_num, ant1, ant2, :, 1, 0]
 
                         flux[idx + ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
                 #print flux.shape
