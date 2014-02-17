@@ -1009,9 +1009,15 @@ class InterFits(object):
         for i in range(1, self.n_ant + 1):
             for j in range(1, self.n_ant + 1):
                 if j >= i:
-                    bl_lower.append(256 * i + j)
+                    if j >= 256:
+                        bl_lower.append(2048 * i + j + 65536)
+                    else:
+                        bl_lower.append(256 * i + j)
                 elif j <= i:
-                    bl_upper.append(256 * j + i)
+                    if j >= 256:
+                        bl_upper.append(2048 * j + i + 65536)
+                    else:
+                        bl_upper.append(256 * j + i)
 
         # Check every baseline is right, over all dumps
         n_bls = self.n_ant * (self.n_ant - 1) / 2 + self.n_ant
@@ -1056,11 +1062,20 @@ class InterFits(object):
         print "Verification: OK. UV_DATA does not contain null (zero) entries in required fields"
         return True
 
+    def verify_frequency_axis(self):
+        """ Verify frequency values are sensical """
+        try:
+            f = self.formatFreqs()
+            print "Verification: OK. Frequency axis spans valid range."
+        except ValueError:
+            raise VerificationError("Frequency values are fubarred")
+
     def verify(self):
         """ Run a series of diagnostics to test data validity """
         h1("Data verification")
         self.verify_uv_table()
         self.verify_baseline_order()
+        self.verify_frequency_axis()
 
     def formatStokes(self):
         """ Return data as complex stokes vector """
@@ -1085,6 +1100,22 @@ class InterFits(object):
             return data2
         else:
             raise ValueError("NSTOKES in h_params is not valid!")
+
+    def formatFreqs(self):
+        """ Convert FITS keywords to frequency array """
+        ref_delt = self.h_common["CHAN_BW"]
+        ref_pix  = self.h_common["REF_PIXL"]
+        ref_val  = self.h_common["REF_FREQ"]
+        num_pix  = self.h_common["NO_CHAN"]
+        freqs    = np.arange(0,num_pix,1) * ref_delt + (ref_val - ref_pix * ref_delt)
+        try:
+            assert np.min(freqs) >= 0
+            assert chan_bw > 0
+        except:
+            print "CHAN_BW: %s\n REF_PIXL: %s\n REF_FREQ: %s\n NO_CHAN %s"%(ref_delt, ref_pix, ref_val, num_pix)
+            raise ValueError("Frequency values are fubarred.")
+        return freqs
+
 
     def get_antenna_id(self, bl_id):
         """ Convert baseline ID into an antenna pair.

@@ -236,6 +236,7 @@ class LedaFits(InterFits):
                 h2("Loading visibility data")
                 d   = dada.DadaSubBand(self.filename, n_int)
                 vis = d.data
+                self.dada_header = d.header
                 try:
                     n_chans = int(d.header["NCHAN"])
                     n_pol   = int(d.header["NPOL"])
@@ -412,16 +413,6 @@ class LedaFits(InterFits):
         xyz = coords.altaz2cartesian(s.alt, s.az)
         return xyz
 
-    def _compute_freqs(self):
-        """ generate the frequency channels array from metadata """
-            # Generate frequency array from metadata
-        ref_delt = self.h_common["CHAN_BW"]
-        ref_pix  = self.h_common["REF_PIXL"]
-        ref_val  = self.h_common["REF_FREQ"]
-        num_pix  = self.h_common["NO_CHAN"]
-        freqs    = np.arange(0,num_pix,1) * ref_delt + (ref_val - ref_pix * ref_delt)
-        return freqs
-
     def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
         if n_uv_rows is None:
@@ -573,7 +564,7 @@ class LedaFits(InterFits):
         dd, tt = [], []        
         for ii in range(n_iters):
             jd, jt = coords.convertToJulianTuple(self.date_obs)
-            tdelta = ledafits_config.INT_TIME * ii
+            tdelta = ledafits_config.INT_TIME * ii / 86400.0 # In days
             jds = [jd for jj in range(len(ant_arr))]
             jts = [jt + tdelta for jj in range(len(ant_arr))]
             dd.append(jds)
@@ -716,7 +707,8 @@ class LedaFits(InterFits):
         h1("Phasing flux data to %s"%self.d_source["SOURCE"][0])
 
         ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
-        freqs = self._compute_freqs()
+        freqs = self.formatFreqs()
+        print freqs.shape, np.min(freqs), np.max(freqs)
         w = 2 * np.pi * freqs # Angular freq
 
         try:
@@ -795,12 +787,8 @@ class LedaFits(InterFits):
         tdelts = els / sol
 
         # Generate frequency array from metadata
-        ref_delt = self.h_common["CHAN_BW"]
-        ref_pix  = self.h_common["REF_PIXL"]
-        ref_val  = self.h_common["REF_FREQ"]
-        num_pix  = self.h_common["NO_CHAN"]
-        freqs    = np.arange(0,num_pix,1) * ref_delt + (ref_val - ref_pix * ref_delt)
-        print freqs.shape
+        freqs = self.formatFreqs()
+        print freqs.shape, np.min(freqs), np.max(freqs)
         # Compute phase delay for each antenna pair
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'

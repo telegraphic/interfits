@@ -8,6 +8,8 @@ fitsidifile = 'nm-cyg.fitsidi'
 vis = 'nm-cyg.vis'
 importfitsidi()
 
+#plotms()
+
 # Apply bandpass correction
 caltable = 'nm-cyg.B'
 bandpass()
