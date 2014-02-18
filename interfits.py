@@ -148,6 +148,7 @@ class InterFits(object):
         return {
             'uvfits': self.readUvfits,
             'fitsidi': self.readFitsidi,
+            'FITS_1': self.readFitsidi,
             'fidi': self.readFitsidi,
             'idifits': self.readFitsidi,
             'hdf5': self.readHdf5,
