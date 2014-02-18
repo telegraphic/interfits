@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 import pandas as pd
 import ujson as json
 import numpy as np

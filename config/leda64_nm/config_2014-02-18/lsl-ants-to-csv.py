@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 from lsl.common.stations import lwa1
 ants = lwa1.getAntennas()
 
