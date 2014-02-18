@@ -437,6 +437,8 @@ class LedaFits(InterFits):
         h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
 
         if self.telescope in ('LEDA', 'LWAOVRO', 'LEDA512'):
+            h3("Data appears to be from LWAOVRO")
+            
             self.site             = ledafits_config.ovro
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry)
@@ -444,6 +446,8 @@ class LedaFits(InterFits):
             self.d_antenna        = load_json(ledafits_config.json_d_antenna)
             self.z_elength        = load_json(ledafits_config.json_antenna_el_lens)
         elif self.telescope in ('LWA1', 'LWANM', 'LEDA64'):
+            h3("Data appears to be from LWA1")
+            
             self.site             = ledafits_config.lwa1
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry_nm)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry_nm)
@@ -800,7 +804,6 @@ class LedaFits(InterFits):
 
         # Generate frequency array from metadata
         freqs = self.formatFreqs()
-        print freqs.shape, np.min(freqs), np.max(freqs)
         # Compute phase delay for each antenna pair
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'

@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 interfits.py
 ============
@@ -1110,9 +1111,10 @@ class InterFits(object):
         freqs    = np.arange(0,num_pix,1) * ref_delt + (ref_val - ref_pix * ref_delt)
         try:
             assert np.min(freqs) >= 0
-            assert chan_bw > 0
-        except:
+            assert ref_delt > 0
+        except Exception, e:
             print "CHAN_BW: %s\n REF_PIXL: %s\n REF_FREQ: %s\n NO_CHAN %s"%(ref_delt, ref_pix, ref_val, num_pix)
+            print "Error: %s" % str(e)
             raise ValueError("Frequency values are fubarred.")
         return freqs
 
