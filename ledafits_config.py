@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 ledafits_config.py
 ==============
@@ -32,6 +33,17 @@ ovro      = ephem.Observer()
 ovro.lon  = longitude
 ovro.lat  = latitude
 ovro.elev = elevation
+
+########
+# Station location - LWA1
+########
+
+(latitude, longitude, elevation) = ('34.070', '-107.628', 2133.6)
+
+lwa1      = ephem.Observer()
+lwa1.lon  = longitude
+lwa1.lat  = latitude
+lwa1.elev = elevation
 
 ########
 # LedaFits defaults

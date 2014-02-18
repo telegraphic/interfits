@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 ledafits.py
 ============
@@ -407,12 +408,16 @@ class LedaFits(InterFits):
         ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
         ra_str  = str(ledafits_config.ephem.hours(np.deg2rad(ra_deg)))
         dec_str = str(ledafits_config.ephem.degrees(np.deg2rad(dec_deg)))
-        ov = ledafits_config.ovro
-        ov.date = dt_utc
+        site = self.site
+        site.date = dt_utc
 
-        s = coords.makeSource(src, ra_str, dec_str)
-        s.compute(ov)
-        xyz = coords.altaz2cartesian(s.alt, s.az)
+        cosDec = np.cos(dec_deg*np.pi/180.0)
+        sinDec = np.sin(dec_deg*np.pi/180.0)
+        cosHA  = np.cos(ha_deg*np.pi/180.0)
+        sinHA  = np.sin(ha_deg*np.pi/180.0)
+        xyz = np.array([cosDec*cosHA, -cosDec*sinHA, sinDec])
+        return xyz
+
         return xyz
 
     def setDefaultsLeda(self, n_uv_rows=None):
@@ -432,15 +437,19 @@ class LedaFits(InterFits):
         h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
 
         if self.telescope in ('LEDA', 'LWAOVRO', 'LEDA512'):
+            self.site             = ledafits_config.ovro
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry)
             self.h_antenna        = load_json(ledafits_config.json_h_antenna)
             self.d_antenna        = load_json(ledafits_config.json_d_antenna)
+            self.z_elength        = load_json(ledafits_config.json_antenna_el_lens)
         elif self.telescope in ('LWA1', 'LWANM', 'LEDA64'):
+            self.site             = ledafits_config.lwa1
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry_nm)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry_nm)
             self.h_antenna        = load_json(ledafits_config.json_h_antenna_nm)
             self.d_antenna        = load_json(ledafits_config.json_d_antenna_nm)
+            self.z_elength        = load_json(ledafits_config.json_antenna_el_lens_nm)
         else:
             raise ValueError("Cannot load array geometry for %s"%self.telescope)
 
@@ -458,9 +467,9 @@ class LedaFits(InterFits):
             dt_utc = datetime.utcfromtimestamp(ts)
         else:
             dt_utc = datetime.strptime(self.date_obs, "%Y-%m-%dT%H:%M:%S")
-        ov = ledafits_config.ovro
-        ov.date = dt_utc
-        lst, lst_deg = ov.sidereal_time(), ov.sidereal_time() / 2 / np.pi * 360
+        site = self.site
+        site.date = dt_utc
+        lst, lst_deg = site.sidereal_time(), site.sidereal_time() / 2 / np.pi * 360
         print "UTC: %s"%dt_utc
         print "LST: %s (%s)"%(lst, lst_deg)
         return lst_deg
@@ -785,7 +794,8 @@ class LedaFits(InterFits):
         #t0 = time.time()
         # Load antenna Electrical Lengths
         sol   = ledafits_config.SPEED_OF_LIGHT
-        els   = load_json(ledafits_config.json_antenna_el_lens)["EL"]
+        els   = self.z_elength["EL"]
+        els   = np.array(els)
         tdelts = els / sol
 
         # Generate frequency array from metadata
@@ -807,7 +817,7 @@ class LedaFits(InterFits):
             for ii in range(len(bls)):
                 ant1, ant2 = ant_arr[ii]
                 bl         = bls[ii]
-                td1, td2   = tdelts[ant1-1], tdelts[ant2-1]
+                td1, td2   = tdelts[ant1-1,:], tdelts[ant2-1,:]
 
                 # Compute phases for X and Y pol on antennas A and B
                 pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
