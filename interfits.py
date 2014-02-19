@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 interfits.py
 ============
@@ -147,6 +148,7 @@ class InterFits(object):
         return {
             'uvfits': self.readUvfits,
             'fitsidi': self.readFitsidi,
+            'FITS_1': self.readFitsidi,
             'fidi': self.readFitsidi,
             'idifits': self.readFitsidi,
             'hdf5': self.readHdf5,
@@ -1135,8 +1137,9 @@ class InterFits(object):
         try:
             assert np.min(freqs) >= 0
             assert ref_delt > 0
-        except:
-            print "CHAN_BW: %s\n REF_PIXL: %s\n REF_FREQ: %s\n NO_CHAN: %s"%(ref_delt, ref_pix, ref_val, num_pix)
+        except Exception, e:
+            print "CHAN_BW: %s\n REF_PIXL: %s\n REF_FREQ: %s\n NO_CHAN %s"%(ref_delt, ref_pix, ref_val, num_pix)
+            print "Error: %s" % str(e)
             raise ValueError("Frequency values are fubarred.")
 
         return freqs

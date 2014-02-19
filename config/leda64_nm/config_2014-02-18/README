@@ -1,0 +1,7 @@
+Last updated 14th Feb 2018
+
+Files to generate ARRAY_GEOMETRY table information from LSL / LEDA config.
+
+LEDA input mappings are taken from LWA memo 200.
+LWA antenna positions are taken from LSL-1.0.0
+Delays are computed from LSL, at 50 MHz.

@@ -1,5 +1,6 @@
 #! /usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 ledafits.py
 ============
@@ -397,7 +398,7 @@ class LedaFits(InterFits):
 
         return ra_deg, dec_deg, lst_deg, ha_deg
 
-    def _compute_pointing_vec(self, src, debug=False):
+    def _compute_pointing_vec(self, src):
         """ Compute the ALT and AZ for a source, then convert into cartesian pointing vector
         """
         tt_source = coords.parse_timestring(self.date_obs)
@@ -408,23 +409,15 @@ class LedaFits(InterFits):
 
         ra_str  = str(ledafits_config.ephem.hours(np.deg2rad(ra_deg)))
         dec_str = str(ledafits_config.ephem.degrees(np.deg2rad(dec_deg)))
+        site = self.site
+        site.date = dt_utc
 
-        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDA512', 'LEDA-OVRO'):
-            #h2("Telescope is at OVRO")
-            ov = ledafits_config.ovro
-        else:
-            #h2("Telescope is at NM")
-            ov = ledafits_config.lwa1
-
-        ov.date = dt_utc
-
-        s = coords.makeSource(src, ra_str, dec_str)
-        s.compute(ov)
-        if debug:
-            print s
-            print float(s.alt), float(s.az)
-
-        xyz = coords.altaz2cartesian(s.alt, s.az)
+        cosDec = np.cos(dec_deg*np.pi/180.0)
+        sinDec = np.sin(dec_deg*np.pi/180.0)
+        cosHA  = np.cos(ha_deg*np.pi/180.0)
+        sinHA  = np.sin(ha_deg*np.pi/180.0)
+        #h2("Telescope is at NM")
+        xyz = np.array([cosDec*cosHA, -cosDec*sinHA, sinDec])
         return xyz
 
     def setDefaultsLeda(self, n_uv_rows=None):
@@ -444,15 +437,23 @@ class LedaFits(InterFits):
         h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
 
         if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDA512', 'LEDA-OVRO'):
+            h3("Data appears to be from LWAOVRO")
+            
+            self.site             = ledafits_config.ovro
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry)
             self.h_antenna        = load_json(ledafits_config.json_h_antenna)
             self.d_antenna        = load_json(ledafits_config.json_d_antenna)
+            self.z_elength        = load_json(ledafits_config.json_antenna_el_lens)
         elif self.telescope in ('LWA1', 'LWANM', 'LEDA64', 'LEDA64-NM'):
+            h3("Data appears to be from LWA1")
+            
+            self.site             = ledafits_config.lwa1
             self.h_array_geometry = load_json(ledafits_config.json_h_array_geometry_nm)
             self.d_array_geometry = load_json(ledafits_config.json_d_array_geometry_nm)
             self.h_antenna        = load_json(ledafits_config.json_h_antenna_nm)
             self.d_antenna        = load_json(ledafits_config.json_d_antenna_nm)
+            self.z_elength        = load_json(ledafits_config.json_antenna_el_lens_nm)
         else:
             raise ValueError("Cannot load array geometry for %s"%self.telescope)
 
@@ -471,14 +472,9 @@ class LedaFits(InterFits):
         else:
             dt_utc = datetime.strptime(self.date_obs, "%Y-%m-%dT%H:%M:%S")
 
-        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDA512', 'LEDA-OVRO'):
-            h2("Telescope is at OVRO")
-            ov = ledafits_config.ovro
-        else:
-            h2("Telescope is at NM")
-            ov = ledafits_config.lwa1
-        ov.date = dt_utc
-        lst, lst_deg = ov.sidereal_time(), ov.sidereal_time() / 2 / np.pi * 360
+        site = self.site
+        site.date = dt_utc
+        lst, lst_deg = site.sidereal_time(), site.sidereal_time() / 2 / np.pi * 360
         print "UTC: %s"%dt_utc
         print "LST: %s (%s)"%(lst, lst_deg)
         return lst_deg
@@ -732,13 +728,10 @@ class LedaFits(InterFits):
 
     def phase_to_src(self, src='ZEN', generate_uvw=True):
         """ Apply phase corrections to phase to source """
+        h1("Phasing flux data to %s"%self.d_source["SOURCE"][0])
 
         if generate_uvw is True:
             self.generateUVW(src, update_src=True)
-
-        h1("Phasing flux data to %s"%str(self.d_source["SOURCE"][0]))
-
-        #ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
         freqs = self.formatFreqs()
         w     = 2 * np.pi * freqs # Angular freq
         # Note WW *is* the geometric delay tg
@@ -756,23 +749,14 @@ class LedaFits(InterFits):
             bls, ant_arr = self.generateBaselineIds(autocorrs=False)
         else:
             bls, ant_arr = self.generateBaselineIds(autocorrs=True)
-        #p_vec        = self._compute_pointing_vec(src)
-
         n_int = len(flux) / len(bls)
 
         for nn in range(n_int):
             for ii in range(len(bls)):
                 ant1, ant2 = ant_arr[ii]
-                #bl         = bls[ii]
-
-                # Compute geometric delay
                 #ant_locs = self.d_array_geometry["STABXYZ"]
                 #bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
                 #tg        = np.dot(bl_vec, p_vec) / ledafits_config.SPEED_OF_LIGHT
-
-                #if not ii %1000:
-                #    print tg
-
                 # Compute phases for X and Y pol on antennas A and B
                 tg = tgs[nn*len(bls) + ii]
                 #if ant1 < ant2:
@@ -804,17 +788,12 @@ class LedaFits(InterFits):
         # Load antenna Electrical Lengths
         sol   = ledafits_config.SPEED_OF_LIGHT
 
-        if self.telescope in ('LEDA64', 'LEDA64NM', 'LEDA-NM', 'LWA1', 'LWA-NM'):
-            print "Loading LEDA-NM cable data"
-            els   = load_json(ledafits_config.json_antenna_el_lens)["EL"]
-        else:
-            print "Loading LEDA-512 cable data"
-            els   = load_json(ledafits_config.json_antenna_el_lens)["EL"]
+        els   = self.z_elength["EL"]
+        els   = np.array(els)
         tdelts = els / sol
 
         # Generate frequency array from metadata
         freqs = self.formatFreqs()
-        print freqs.shape, np.min(freqs), np.max(freqs)
         # Compute phase delay for each antenna pair
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'
@@ -831,7 +810,7 @@ class LedaFits(InterFits):
             for ii in range(len(bls)):
                 ant1, ant2 = ant_arr[ii]
                 bl         = bls[ii]
-                td1, td2   = tdelts[ant1-1], tdelts[ant2-1]
+                td1, td2   = tdelts[ant1-1,:], tdelts[ant2-1,:]
 
                 # Compute phases for X and Y pol on antennas A and B
                 pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
