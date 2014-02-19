@@ -33,6 +33,13 @@ ovro.lon  = longitude
 ovro.lat  = latitude
 ovro.elev = elevation
 
+(latitude_nm, longitude_nm, elevation_nm) = ('34.07', '-107.628', 2133.6)
+
+lwa1      = ephem.Observer()
+lwa1.lon  = longitude_nm
+lwa1.lat  = latitude_nm
+lwa1.elev = elevation_nm
+
 ########
 # LedaFits defaults
 #######

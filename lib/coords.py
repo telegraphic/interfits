@@ -15,7 +15,7 @@ import numpy as np
 import time, calendar
 from datetime import datetime
 
-LIGHT_SPEED = 299792458 # From Google
+LIGHT_SPEED = 299792458.0 # From Google
 
 class AntArray(ephem.Observer):
     """ An antenna array class.
@@ -104,19 +104,22 @@ def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True, t_matrix=None):
     if conjugate:
         uvw = -1 * uvw
     if in_microseconds:
-        return uvw[:,0] / LIGHT_SPEED
+        return uvw[:, 0] / LIGHT_SPEED
     else:
-        return uvw[:,0]
-
+        return uvw[:, 0]
 
 def altaz2cartesian(alt, az, r=1):
     """ Convert ALT AZ to cartesian coords
 
     alt, az in radians
     """
-    x = r * np.cos(alt) * np.sin(az)
-    y = r * np.cos(alt) * np.cos(az)
-    z = r * np.sin(alt)
+
+    #alt = np.pi/2 - alt
+    az  = np.pi/2 - az
+
+    x = r * np.sin(alt) * np.cos(az)
+    y = r * np.sin(alt) * np.sin(az)
+    z = r * np.cos(alt)
     return np.array([x, y, z])
 
 def geo2ecef(lat, lon, elev):
@@ -137,7 +140,6 @@ def geo2ecef(lat, lon, elev):
     z = ((WGS84_b**2/WGS84_a**2)*N+elev)*np.sin(lat)
 
     return (x, y, z)
-
 
 def ecef2geo(x, y, z):
     """
@@ -175,6 +177,7 @@ def ecef2geo(x, y, z):
 
     return lat, lon, elev
 
+
 def convertToJulianTuple(timestamp):
     """ Convert a list of timestamps into DATE and TIME since julian midnight
 
@@ -187,7 +190,7 @@ def convertToJulianTuple(timestamp):
     
     # Figure out exactly what type of timestamp we've got.
     if type(timestamp) in (str, unicode):
-        tt = time.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+        tt = parse_timestring(timestamp)
         ts = calendar.timegm(tt)
     elif type(timestamp) is float:
         ts = timestamp
@@ -211,12 +214,17 @@ def convertToJulianTuple(timestamp):
 
     return julian_midnight, time_elapsed
 
-
 def parse_timestring(tstring):
     """ Convert timestring into timestamp """
-    if re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d\d", tstring):
-        return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
-    elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d", tstring):
-        return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S")
-    else:
-        raise ValueError("Cannot parse %s"%tstring)
+    try:
+        if re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d+$", tstring):
+            return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
+        elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d$", tstring):
+            return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
+        elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d$", tstring):
+            return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S")
+        else:
+            raise ValueError("Cannot parse %s"%tstring)
+    except ValueError:
+        print tstring
+        raise
