@@ -418,8 +418,6 @@ class LedaFits(InterFits):
         xyz = np.array([cosDec*cosHA, -cosDec*sinHA, sinDec])
         return xyz
 
-        return xyz
-
     def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
         if n_uv_rows is None:
@@ -745,7 +743,7 @@ class LedaFits(InterFits):
                 # Compute geometric delay
                 ant_locs = self.d_array_geometry["STABXYZ"]
                 bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
-                tg       = np.dot(bl_vec, p_vec) / ledafits_config.SPEED_OF_LIGHT
+                tg       = np.dot(p_vec, bl_vec) / ledafits_config.SPEED_OF_LIGHT
 
                 #if not ii %1000:
                 #    print tg
