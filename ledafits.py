@@ -19,9 +19,6 @@ from interfits import *
 from lib import dada, coords
 import ledafits_config
 
-# Load globals from config file
-OFFSET_DELTA, INT_TIME, N_INT = ledafits_config.OFFSET_DELTA, ledafits_config.INT_TIME, ledafits_config.N_INT_PER_FILE
-
 class HeaderDataUnit(object):
     """ Very basic object with header and data units """
     def __init__(self, header, data):
@@ -263,9 +260,9 @@ class LedaFits(InterFits):
                 im_vis = np.imag(vis)
                 # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
                 flux = np.zeros([len(bl_lower) * n_int, n_chans * n_stk * 2], dtype='float32')
-                for int_num in range(n_int):
+                for int_num in xrange(n_int):
                     idx = int_num * len(bl_lower)
-                    for ii in range(len(bl_lower)):
+                    for ii in xrange(len(bl_lower)):
                         ant1, ant2 = ant_arr[ii]
                         ant1, ant2 = ant1 - 1, ant2 - 1
 
@@ -321,14 +318,17 @@ class LedaFits(InterFits):
             self.correlator = d.header["INSTRUMENT"]
             self.instrument = d.header["INSTRUMENT"]
             self.telescope  = d.header["TELESCOPE"]
-
+            
+            # Compute the integration time
+            self.tInt = float(d.header['NAVG'])*float(d.header['NFFT'])/float(d.header['FREQ'])/1e6
+            
             # Compute time offset
             h2("Computing UTC offsets")
             dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
             byte_offset = int(d.header["OBS_OFFSET"])
             bytes_per_avg = int(d.header["BYTES_PER_AVG"])
             num_int = byte_offset / bytes_per_avg
-            time_offset = num_int * ledafits_config.INT_TIME
+            time_offset = num_int * self.tInt
             dt_obj = dt_obj + timedelta(seconds=time_offset)
             date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
             dd_obs   = dt_obj.strftime("%Y-%m-%d")
@@ -489,14 +489,13 @@ class LedaFits(InterFits):
 
         bls, ant_arr = [], []
         for ii in range(1, n_ant + 1):
-            for jj in range(1, n_ant + 1):
-                if jj >= ii:
-                    ant_arr.append((ii, jj))
-                    if ii > 255 or jj > 255:
-                        bl_id = ii * 2048 + jj + 65536
-                    else:
-                        bl_id = 256 * ii + jj
-                    bls.append(bl_id)
+            for jj in range(ii, n_ant + 1):
+                ant_arr.append((ii, jj))
+                if ii > 255 or jj > 255:
+                    bl_id = ii * 2048 + jj + 65536
+                else:
+                    bl_id = 256 * ii + jj
+                bls.append(bl_id)
         return bls, ant_arr
 
     def generateUVW(self, src='ZEN', update_src=True, conjugate=False, use_stored=False):
@@ -577,7 +576,7 @@ class LedaFits(InterFits):
         dd, tt = [], []        
         for ii in range(n_iters):
             jd, jt = coords.convertToJulianTuple(self.date_obs)
-            tdelta = ledafits_config.INT_TIME * ii / 86400.0 # In days
+            tdelta = self.tInt * ii / 86400.0 # In days
             jds = [jd for jj in range(len(ant_arr))]
             jts = [jt + tdelta for jj in range(len(ant_arr))]
             dd.append(jds)
@@ -680,8 +679,8 @@ class LedaFits(InterFits):
         h2("Fixing NOPCAL (setting to zero)")
         self.h_antenna["NOPCAL"] = 0
 
-        h2("Setting INTTIME to %s"%INT_TIME)
-        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * INT_TIME
+        h2("Setting INTTIME to %s" % self.tInt)
+        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * self.tInt
 
     def flag_antenna(self, antenna_id, reason=None, severity=0):
         """ Flag antenna as bad
