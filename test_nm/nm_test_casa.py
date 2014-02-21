@@ -4,8 +4,9 @@ _ip.system("rm -i -rf nm-cyg.vis")
 _ip.system("rm -i -rf nm-cyg.B")
 
 # Import data
-fitsidifile = 'nm-cyg.fitsidi'
-vis = 'nm-cyg.vis'
+#fitsidifile = 'nm-cyg.fitsidi'
+fitsidifile = 'Zenith/Zenith_b1_d20140129_utc224413.uvfits'
+vis = 'nm-zen.vis'
 importfitsidi()
 
 #plotms()

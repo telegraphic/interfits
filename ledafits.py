@@ -61,8 +61,11 @@ class LedaFits(InterFits):
                 file_ext = os.path.splitext(filename)[1][1:]
                 self._readFile(file_ext)
 
+        self._initialize_site()
+
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
+
         return {
                 'uvfits': self.readUvfits,
                 'fitsidi': self.readFitsidi,
@@ -78,7 +81,7 @@ class LedaFits(InterFits):
                 'dada': self.readDada
         }.get(filetype, self.readError)()
 
-    def _readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4):
+    def _readLfile(self, n_ant=32, n_pol=2, n_chans=600, n_stk=4):
         """ Main L-File reading subroutine.
         Opens L-files and forms a visibility matrix.
         See readLfile for main routine """
@@ -116,7 +119,7 @@ class LedaFits(InterFits):
 
         return vis
 
-    def readLfile(self, n_ant=256, n_pol=2, n_chans=109, n_stk=4, config_xml=None):
+    def readLfile(self, n_ant=32, n_pol=2, n_chans=600, n_stk=4, config_xml=None):
         """ Read a LEDA L-file 
         
         filename: str
@@ -166,7 +169,7 @@ class LedaFits(InterFits):
 
         h2("Generating baseline IDs")
         # Create baseline IDs using MIRIAD >255 antenna format (which sucks)
-        bls, ant_arr = self.generateBaselineIds(n_ant)
+        bls, ant_arr = coords.generateBaselineIds(n_ant)
 
         bl_lower = []
         for dd in range(vis.shape[0]):
@@ -175,7 +178,7 @@ class LedaFits(InterFits):
         h2("Converting visibilities to FLUX columns")
         flux = np.zeros([len(bl_lower), n_chans * n_stk * 2], dtype='float32')
         for ii in range(len(bl_lower)):
-            ant1, ant2 = ant_arr[ii]
+            ant1, ant2 = ant_arr[ii % len(ant_arr)]
             idx1, idx2 = 2 * (ant1 - 1), 2 * (ant2 - 1)
             xx = vis[0, idx1, idx2]
             yy = vis[0, idx1 + 1, idx2 + 1]
@@ -215,7 +218,7 @@ class LedaFits(InterFits):
         self.source    = self.d_source["SOURCE"][0]
 
 
-    def readDada(self, n_int=None,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+    def readDada(self, n_int=None, n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
             """ Read a LEDA DADA file.
 
             header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
@@ -229,7 +232,7 @@ class LedaFits(InterFits):
                 d = HeaderDataUnit(header_dict, data_arr)
                 flux = data_arr
                 h2("Generating baseline IDs")
-                bls, ant_arr = self.generateBaselineIds(n_ant)
+                bls, ant_arr = coords.generateBaselineIds(n_ant)
                 bl_lower = []
                 while len(bl_lower) < len(flux):
                     bl_lower += bls
@@ -250,7 +253,7 @@ class LedaFits(InterFits):
                     raise
 
                 h2("Generating baseline IDs")
-                bls, ant_arr = self.generateBaselineIds(n_ant)
+                bls, ant_arr = coords.generateBaselineIds(n_ant)
                 bl_lower = []
                 for dd in range(vis.shape[0] / n_int):
                     bl_lower += bls
@@ -358,6 +361,39 @@ class LedaFits(InterFits):
             # Load array geometry from file, based on TELESCOP name
             self.loadAntArr()
 
+    def _initialize_site(self):
+        """ Setup site (ephem observer)
+
+        Uses ecef2geo function (Bowring's method), to convert
+        ECEF to Lat-Long-Elev, then creates an ephem observer.
+        Note: this overrides the Interfits method, adding checks for LEDA telescopes,
+        and preferentially loads those data.
+        """
+        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDA512', 'LEDA-OVRO'):
+            h3("Data appears to be from LWAOVRO")
+            self.site             = ledafits_config.ovro
+            self.z_elength        = load_json(ledafits_config.json_antenna_el_lens)
+
+        elif self.telescope in ('LWA1', 'LWA-1', 'LWA-NM', 'LWANM', 'LEDA64', 'LEDA64-NM'):
+            h3("Data appears to be from LWA1")
+            self.site             = ledafits_config.lwa1
+            self.z_elength        = load_json(ledafits_config.json_antenna_el_lens_nm)
+
+        else:
+            x = self.h_array_geometry["ARRAYX"]
+            y = self.h_array_geometry["ARRAYY"]
+            z = self.h_array_geometry["ARRAYZ"]
+            lat, long, elev = coords.ecef2geo(x, y, z)
+
+            site      = ephem.Observer()
+            site.lon  = long * 180 / np.pi
+            site.lat  = lat * 180 / np.pi
+            site.elev = elev
+
+        print "Telescope: %s"%self.telescope
+        print "Latitude:  %s"%self.site.lat
+        print "Longitude: %s"%self.site.long
+        print "Elevation: %s"%self.site.elev
 
     def _compute_lst_ha(self, src):
         """ Helper function for computing LST, HA, and RA from timestamp
@@ -372,8 +408,8 @@ class LedaFits(InterFits):
 
         # Find HA and DEC of source
         if src.upper() == 'ZEN':
-            H, d = 0, np.deg2rad(float(ledafits_config.latitude))
-            dec_deg  = float(ledafits_config.latitude)
+            H, d     = 0, float(self.site.lat)
+            dec_deg  = np.rad2deg(d)
             ra_deg   = lst_deg
             ha_deg   = 0
         else:
@@ -431,7 +467,7 @@ class LedaFits(InterFits):
         self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(ledafits_config.SUB_BW)
         self.h_uv_data["TELESCOP"]          = ledafits_config.TELESCOP
         self.h_array_geometry["ARRNAM"]     = ledafits_config.ARRNAM
-    
+
     def loadAntArr(self):
         """ Loads ANTENNA and ARRAY_GEOMETRY tables as set in leda_config """
         h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
@@ -445,7 +481,8 @@ class LedaFits(InterFits):
             self.h_antenna        = load_json(ledafits_config.json_h_antenna)
             self.d_antenna        = load_json(ledafits_config.json_d_antenna)
             self.z_elength        = load_json(ledafits_config.json_antenna_el_lens)
-        elif self.telescope in ('LWA1', 'LWANM', 'LEDA64', 'LEDA64-NM'):
+
+        elif self.telescope in ('LWA1', 'LWA-1', 'LWA-NM', 'LWANM', 'LEDA64', 'LEDA64-NM'):
             h3("Data appears to be from LWA1")
             
             self.site             = ledafits_config.lwa1
@@ -479,33 +516,6 @@ class LedaFits(InterFits):
         print "LST: %s (%s)"%(lst, lst_deg)
         return lst_deg
 
-    def generateBaselineIds(self, n_ant=None, autocorrs=True):
-        """ Generate a list of unique baseline IDs and antenna pairs
-        
-        This uses the MIRIAD definition for >256 antennas:
-        bl_id = 2048*ant1 + ant2 + 65536
-        
-        n_ant: number of antennas in the array
-        autocorrs: include antenna autocorrelations?
-        """
-        if n_ant is None:
-            n_ant = self.n_ant
-
-        bls, ant_arr = [], []
-        for ii in range(1, n_ant + 1):
-            for jj in range(1, n_ant + 1):
-                if jj >= ii:
-                    if autocorrs is False and ii == jj:
-                        pass
-                    else:
-                        ant_arr.append((ii, jj))
-                        if ii > 255 or jj > 255:
-                            bl_id = ii * 2048 + jj + 65536
-                        else:
-                            bl_id = 256 * ii + jj
-                        bls.append(bl_id)
-        return bls, ant_arr
-
     def generateUVW(self, src='ZEN', update_src=True, conjugate=False, use_stored=False):
         """ Generate UVW coordinates based on timestamps and array geometry
 
@@ -535,50 +545,38 @@ class LedaFits(InterFits):
         print "Source DEC: %2.3f deg"%dec_deg
         print "HA:         %2.3f deg"%np.rad2deg(H)
 
+        try:
+            assert H < 2 * np.pi and d < 2 * np.pi
+        except AssertionError:
+            raise ValueError("HA and DEC are too large (may not be in radians).")
+
         # Recreate list of baselines
         h2("Computing UVW coordinates for %s"%src)
+        xyz   = self.d_array_geometry['STABXYZ']
         if 257 in set(self.d_uv_data["BASELINE"]):
-            bl_ids, ant_arr = self.generateBaselineIds(self.n_ant)
+            bl_ids, ant_arr = coords.generateBaselineIds(self.n_ant)
+            bl_vecs = coords.computeBaselineVectors(xyz)
         else:
-            bl_ids, ant_arr = self.generateBaselineIds(self.n_ant, autocorrs=False)
+            bl_ids, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=False)
+            bl_vecs = coords.computeBaselineVectors(xyz, autocorrs=False)
+
         n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
         
         if use_stored:
             h2("Loading stored values")
             self.loadUVW()
         else:
-            n_ant = len(self.d_array_geometry['ANNAME'])
-            xyz   = self.d_array_geometry['STABXYZ']
 
-            # Pre-compute UVW tranformation matrix
-            sin, cos = np.sin, np.cos
-            try:
-                assert H < 2 * np.pi and d < 2 * np.pi
-            except AssertionError:
-                raise ValueError("HA and DEC are too large (may not be in radians).")
+            uvw = coords.computeUVW(bl_vecs, H, d)
 
-            # UVW tranformation matrix -- in lib.uvw
-            t_matrix = np.matrix([
-              [sin(H), cos(H), 0],
-              [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
-              [cos(d)*cos(H), -cos(d)*sin(H), sin(d)]
-            ])
-
-            # Compute baseline vectors
-            bl_veclist, uvw_list = [], []
-            for ant_pair in ant_arr:
-                ii, jj = ant_pair[0] - 1, ant_pair[1] - 1
-                bl_vec = xyz[ii] - xyz[jj]
-                bl_veclist.append(bl_vec)
-                uvw_list.append(coords.computeUVW(bl_vec, H, d, conjugate=conjugate, t_matrix=t_matrix))
-            uvw_arr = np.array(uvw_list)
-            
             # Fill with data
+            # TODO: update this so that it can lock to zenith or phase to src
             uu, vv, ww = [], [], []
             for ii in range(n_iters):
-                uu.append(uvw_arr[:, 0])
-                vv.append(uvw_arr[:, 1])
-                ww.append(uvw_arr[:, 2])
+                uu.append(uvw[:, 0])
+                vv.append(uvw[:, 1])
+                ww.append(uvw[:, 2])
+
             self.d_uv_data["UU"]   = np.array(uu).ravel()
             self.d_uv_data["VV"]   = np.array(vv).ravel()
             self.d_uv_data["WW"]   = np.array(ww).ravel()
@@ -601,10 +599,7 @@ class LedaFits(InterFits):
             self.d_source["SOURCE"] = self.s2arr(src)
             self.d_source["RAEPO"]  = self.s2arr(ra_deg)
             self.d_source["DECEPO"] = self.s2arr(dec_deg)
-
-        #print self.d_uv_data["DATE"]
-        #print self.d_uv_data["TIME"]
-        #print np.array(uu).shape, np.array(vv).shape, np.array(ww).shape
+            self.source = src
 
     def dumpUVW(self, filename):
         """ Dump precomputed UVW coordinates to file 
@@ -727,15 +722,31 @@ class LedaFits(InterFits):
         self.d_flag["CHANS"].append((0, 4096))
 
     def phase_to_src(self, src='ZEN', generate_uvw=True):
-        """ Apply phase corrections to phase to source """
-        h1("Phasing flux data to %s"%self.d_source["SOURCE"][0])
+        """ Apply phase corrections to phase to source.
 
+        Generates new UVW coordinates, then applies geometric delay (W component)
+        to phase flux data to the new phase center.
+
+        Parameters
+        ----------
+        src (str): Source to phase to. Sources are three capital letters:
+            ZEN: Zenith (RA will be computed from timestamps)
+            CYG: Cygnus A
+            CAS: Cassiopeia A
+            TAU: Taurus A
+            VIR: Virgo A
+        generate_uvw (bool): Skip regeneration of UVW coords?
+
+        """
+        h1("Phasing flux data to %s"%src)
+
+        current_tgs = self.d_uv_data["WW"]
         if generate_uvw is True:
             self.generateUVW(src, update_src=True)
         freqs = self.formatFreqs()
         w     = 2 * np.pi * freqs # Angular freq
         # Note WW *is* the geometric delay tg
-        tgs   = self.d_uv_data["WW"]
+        new_tgs   = self.d_uv_data["WW"]
 
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'
@@ -746,19 +757,15 @@ class LedaFits(InterFits):
 
         bls = set(self.d_uv_data["BASELINE"])
         if not 257 in bls:
-            bls, ant_arr = self.generateBaselineIds(autocorrs=False)
+            bls, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=False)
         else:
-            bls, ant_arr = self.generateBaselineIds(autocorrs=True)
+            bls, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=True)
         n_int = len(flux) / len(bls)
 
         for nn in range(n_int):
             for ii in range(len(bls)):
-                ant1, ant2 = ant_arr[ii]
-                #ant_locs = self.d_array_geometry["STABXYZ"]
-                #bl_vec   = ant_locs[ant1-1] - ant_locs[ant2-1]
-                #tg        = np.dot(bl_vec, p_vec) / ledafits_config.SPEED_OF_LIGHT
                 # Compute phases for X and Y pol on antennas A and B
-                tg = tgs[nn*len(bls) + ii]
+                tg = new_tgs[nn*len(bls) + ii] - current_tgs[nn*len(bls) + ii]
                 #if ant1 < ant2:
                 #    tg *= -1    # Compensate for geometry
                 p = np.exp(-1j * w * tg) # Needs to be -ve as compensating delay
@@ -766,12 +773,13 @@ class LedaFits(InterFits):
 
                 flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
 
+
             # Now we have applied geometric delays, we need to
             # convert from viewing as complex to viewing as floats
             assert flux.dtype == 'complex64'
             self.d_uv_data["FLUX"] = flux.view('float32')
 
-    def apply_cable_delays(self):
+    def apply_cable_delays(self, debug=True):
         """ Apply antenna cable delays
 
         Each cable introduces a phase shift of
@@ -787,10 +795,18 @@ class LedaFits(InterFits):
         #t0 = time.time()
         # Load antenna Electrical Lengths
         sol   = ledafits_config.SPEED_OF_LIGHT
-
-        els   = self.z_elength["EL"]
+        try:
+            els   = self.z_elength["EL"]
+        except:
+            print "ERROR: No cable delay data for telescope %s"%self.telescope
+            raise
         els   = np.array(els)
         tdelts = els / sol
+
+        if debug:
+            print "X-POL (ns)  \tY-POL (ns)"
+            for line in tdelts:
+                print "%2.2f   \t%2.2f"%(line[0]*1e9, line[1]*1e9)
 
         # Generate frequency array from metadata
         freqs = self.formatFreqs()
@@ -803,7 +819,7 @@ class LedaFits(InterFits):
 
         flux  = self.d_uv_data["FLUX"].view('complex64')
 
-        bls, ant_arr = self.generateBaselineIds()
+        bls, ant_arr = coords.generateBaselineIds(self.n_ant)
         w = 2 * np.pi * freqs # Angular freq
         n_int = len(flux) / len(bls)
         for nn in range(n_int):
@@ -813,13 +829,13 @@ class LedaFits(InterFits):
                 td1, td2   = tdelts[ant1-1,:], tdelts[ant2-1,:]
 
                 # Compute phases for X and Y pol on antennas A and B
-                pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
+                tdx1, tdy1, tdx2, tdy2 = td1[0], td1[1],  td2[0], td2[1]
 
                 # Corrections require negative sign (otherwise reapplying delays)
-                e_xx = np.exp(-1j * (pxa - pxb))
-                e_yy = np.exp(-1j * (pya - pyb))
-                e_xy = np.exp(-1j * (pxa - pyb))
-                e_yx = np.exp(-1j * (pya - pxb))
+                e_xx = np.exp(-1j * w * (tdx1 - tdx2))
+                e_yy = np.exp(-1j * w * (tdy1 - tdy2))
+                e_xy = np.exp(-1j * w * (tdx1 - tdy2))
+                e_yx = np.exp(-1j * w * (tdy1 - tdx2))
 
                 phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
                 flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs

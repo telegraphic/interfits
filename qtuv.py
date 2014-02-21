@@ -75,7 +75,13 @@ except:
     print "Error: cannot load Pylab. Check your matplotlib install."
     exit()
 
-from interfits import *
+try:
+    from ledafits import *
+    InterFits = LedaFits
+except:
+    print "Warning: cannot load ledafits. Defaulting to Interfits..."
+    from interfits import *
+
 
 class InterFitsGui(QtGui.QWidget):
     """ Qt GUI class

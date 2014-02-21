@@ -21,7 +21,8 @@ def generate_fitsidi(filename_in, filename_out=None):
     
     uvw = LedaFits(filename_in)
     uvw.loadAntArr()
-    uvw.generateUVW(src='ZEN', use_stored=False, update_src=True)
+    uvw.generateUVW(src='ZEN')
+    uvw.extract_integrations(start=0, stop=1)
     uvw.exportFitsidi(filename_out)
     uvw.verify()
 
@@ -29,7 +30,7 @@ def phase_fitsidi(filename_in, filename_out):
 
     uvw = LedaFits(filename_in)
     uvw.generateUVW(src='CYG', use_stored=False, update_src=True)
-    uvw.apply_cable_delays()
+    #uvw.apply_cable_delays()
     uvw.phase_to_src(src='CYG', debug=False)
     uvw.exportFitsidi(filename_out)
     uvw.verify()
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     import sys, os
     
     try:
-        filename_in  = 'nm-2014-01-29-22.dada'
+        filename_in  = '2014-01-29-22h44m13_00.0.dada'
         filename_zen = 'nm-zen.fitsidi'
         filename_cyg = 'nm-cyg.fitsidi'
     except:
@@ -48,5 +49,7 @@ if __name__ == '__main__':
         exit()
     
     generate_fitsidi(filename_in, filename_zen)
-    phase_fitsidi(filename_zen, filename_cyg)
+    
+    #generate_fitsidi('Zenith_b1_d20140129_utc224413/Zenith_b1_d20140129_utc224413.uvfits', 'uvf-zen.fitsidi')
+    
 

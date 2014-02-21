@@ -18,9 +18,11 @@ import pyfits as pf
 import numpy as np
 from lxml import etree
 import h5py
+import ephem
 
 from lib.pyFitsidi import *
 from lib.json_numpy import *
+from lib import coords
 
 
 class LinePrint():
@@ -143,6 +145,7 @@ class InterFits(object):
                 file_ext = os.path.splitext(filename)[1][1:]
                 self._readFile(file_ext)
 
+
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
         return {
@@ -156,6 +159,27 @@ class InterFits(object):
             'h5': self.readHdf5,
             'json': self.readJson
         }.get(filetype, self.readError)()
+
+    def _initialize_site(self):
+        """ Setup site (ephem observer)
+
+        Uses ecef2geo function (Bowring's method), to convert
+        ECEF to Lat-Long-Elev, then creates an ephem observer.
+        """
+        x = self.h_array_geometry["ARRAYX"]
+        y = self.h_array_geometry["ARRAYY"]
+        z = self.h_array_geometry["ARRAYZ"]
+        lat, long, elev = coords.ecef2geo(x, y, z)
+
+        site      = ephem.Observer()
+        site.lon  = long * 180 / np.pi
+        site.lat  = lat * 180 / np.pi
+        site.elev = elev
+
+        print "Telescope: %s"%self.telescope
+        print "Latitude:  %s"%self.site.lat
+        print "Longitude: %s"%self.site.long
+        print "Elevation: %s"%self.site.elev
 
     def readError(self):
         """ Raise an error if file cannot be read """
