@@ -328,10 +328,15 @@ class LedaFits(InterFits):
             # Compute time offset
             h2("Computing UTC offsets")
             dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+            tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds
+            navg   = int(d.header["NAVG"])           # Number of averages per integration
+            int_tim = tsamp * navg                   # Integration time is tsamp * navg
+
             byte_offset = int(d.header["OBS_OFFSET"])
             bytes_per_avg = int(d.header["BYTES_PER_AVG"])
             num_int = byte_offset / bytes_per_avg
-            time_offset = num_int * ledafits_config.INT_TIME
+            time_offset = num_int * int_tim
+
             dt_obj = dt_obj + timedelta(seconds=time_offset)
             date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
             dd_obs   = dt_obj.strftime("%Y-%m-%d")
@@ -358,8 +363,28 @@ class LedaFits(InterFits):
             self.d_array_geometry["ANNAME"] = ["Stand%03d"%i for i in range(len(self.d_array_geometry["ANNAME"]))]
             self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
 
+            self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * int_tim
+
+            # Recreate list of baselines
+            bl_ids, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=False)
+            n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
+
+            h2("Generating timestamps")
+            dd, tt = [], []
+            for ii in range(n_iters):
+                jd, jt = coords.convertToJulianTuple(self.date_obs)
+                tdelta = int_tim * ii / 86400.0 # In days
+                jds = [jd for jj in range(len(ant_arr))]
+                jts = [jt + tdelta for jj in range(len(ant_arr))]
+                dd.append(jds)
+                tt.append(jts)
+
+            self.d_uv_data["DATE"] = np.array(dd, dtype='float64').ravel()
+            self.d_uv_data["TIME"] = np.array(tt, dtype='float64').ravel()
+
             # Load array geometry from file, based on TELESCOP name
             self.loadAntArr()
+            self.phase_to_src('ZEN')
 
     def _initialize_site(self):
         """ Setup site (ephem observer)
@@ -561,6 +586,21 @@ class LedaFits(InterFits):
             bl_vecs = coords.computeBaselineVectors(xyz, autocorrs=False)
 
         n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
+
+
+        h2("Generating timestamps")
+        dd, tt = [], []
+        for ii in range(n_iters):
+            jd, jt = coords.convertToJulianTuple(self.date_obs)
+            tdelta = ledafits_config.INT_TIME * ii / 86400.0 # In days
+            jds = [jd for jj in range(len(ant_arr))]
+            jts = [jt + tdelta for jj in range(len(ant_arr))]
+            dd.append(jds)
+            tt.append(jts)
+
+        self.d_uv_data["DATE"] = np.array(dd, dtype='float64').ravel()
+        self.d_uv_data["TIME"] = np.array(tt, dtype='float64').ravel()
+
         
         if use_stored:
             h2("Loading stored values")
@@ -580,19 +620,6 @@ class LedaFits(InterFits):
             self.d_uv_data["UU"]   = np.array(uu).ravel()
             self.d_uv_data["VV"]   = np.array(vv).ravel()
             self.d_uv_data["WW"]   = np.array(ww).ravel()
-            
-        h2("Generating timestamps")
-        dd, tt = [], []        
-        for ii in range(n_iters):
-            jd, jt = coords.convertToJulianTuple(self.date_obs)
-            tdelta = ledafits_config.INT_TIME * ii / 86400.0 # In days
-            jds = [jd for jj in range(len(ant_arr))]
-            jts = [jt + tdelta for jj in range(len(ant_arr))]
-            dd.append(jds)
-            tt.append(jts)
-
-        self.d_uv_data["DATE"] = np.array(dd, dtype='float64').ravel()
-        self.d_uv_data["TIME"] = np.array(tt, dtype='float64').ravel()
 
         if update_src:
             h2("Updating SOURCE table")
