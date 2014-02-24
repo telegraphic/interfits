@@ -27,8 +27,8 @@ def main(args):
 		# Apply the cable delays
 		uvw.apply_cable_delays()
 		
-		## Phase to zenith
-		#uvw.phase_to_src(src='ZEN', debug=False)
+		# Phase to zenith
+		uvw.phase_to_src(src='ZEN', debug=False)
 		
 		# Verify
 		uvw.verify()
