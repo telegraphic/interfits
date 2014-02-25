@@ -882,8 +882,6 @@ class LedaFits(InterFits):
         Visibility is VpVq*, so we need to apply
             exp(-i  (phip - phiq))
         to compensate for cable delay
-
-        TODO: Phase values can be precomputed; implement this for speed boost.
         """
 
         h1("Applying cable delays")
@@ -902,29 +900,37 @@ class LedaFits(InterFits):
         except AssertionError:
             print self.d_uv_data["FLUX"].dtype
             raise
-
+            
+        # Convert the data to complex values
         flux  = self.d_uv_data["FLUX"].view('complex64')
-
+        
+        # Pre-compute the phasing information
         bls, ant_arr = self.generateBaselineIds()
         w = 2 * np.pi * freqs # Angular freq
+        delayCorrs = np.zeros((4, len(bls), len(freqs)), dtype=flux.dtype)
+        for ii in range(len(bls)):
+            ant1, ant2 = ant_arr[ii]
+            bl         = bls[ii]
+            td1, td2   = tdelts[ant1-1,:], tdelts[ant2-1,:]
+            
+            # Compute phases for X and Y pol on antennas A and B
+            pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
+            
+            # Corrections require negative sign (otherwise reapplying delays)
+            delayCorrs[0,ii,:] = np.exp(1j * (pxa - pxb))	# XX
+            delayCorrs[1,ii,:] = np.exp(1j * (pya - pyb))	# YY
+            delayCorrs[2,ii,:] = np.exp(1j * (pxa - pyb))	# XY
+            delayCorrs[3,ii,:] = np.exp(1j * (pya - pxb))	# YX
+            
         n_int = len(flux) / len(bls)
         for nn in range(n_int):
             for ii in range(len(bls)):
-                ant1, ant2 = ant_arr[ii]
-                bl         = bls[ii]
-                td1, td2   = tdelts[ant1-1,:], tdelts[ant2-1,:]
-
-                # Compute phases for X and Y pol on antennas A and B
-                pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
-
-                # Corrections require negative sign (otherwise reapplying delays)
-                e_xx = np.exp(1j * (pxa - pxb))
-                e_yy = np.exp(1j * (pya - pyb))
-                e_xy = np.exp(1j * (pxa - pyb))
-                e_yx = np.exp(1j * (pya - pxb))
+                e_xx = delayCorrs[0,ii,:].flatten()
+                e_yy = delayCorrs[1,ii,:].flatten()
+                e_xy = delayCorrs[2,ii,:].flatten()
+                e_yx = delayCorrs[3,ii,:].flatten()
 
                 phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
-                if nn == 0 and ii == 0:
                 flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
 
 
