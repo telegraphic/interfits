@@ -125,7 +125,7 @@ def main(args):
 		## Add in the UVW coordinates
 		uvws[0].generateUVW(src='ZEN', use_stored=False, update_src=True)
 		
-		### Apply the cable delays
+		## Apply the cable delays
 		uvws[0].apply_cable_delays()
 		
 		## Phase to zenith
