@@ -358,7 +358,103 @@ class LedaFits(InterFits):
             # Load array geometry from file, based on TELESCOP name
             self.loadAntArr()
 
+    def inspectFile(self, filename=None, filetype=None):
+        """ Check file type, and load metadata corresponding
 
+        filename (str): name of file. Alternatively, if a psrdada header dictionary
+                        is passed, data will be loaded from shared memory. File type
+                        is inferred from extension (unless filetype arg is also passed).
+        filetype (str): Defaults to none. If passed, treat file as having an explicit
+                        type. Useful for when extension does not match data.
+        """
+        # Check what kind of file to load
+
+        if filetype is not None:
+            self._inspectFile(filetype)
+
+        else:
+            if filename is None:
+                pass
+            elif type(filename) is tuple:
+                # Tuple is header_dict and numpy data array
+                matched = True
+                head, data = filename[0], filename[1]
+                return self.readDada(header_dict=head, data_arr=data, inspectOnly=True)
+            else:
+                file_ext = os.path.splitext(filename)[1][1:]
+                self.filename = filename
+                return self._inspectFile(file_ext)
+
+    def _inspectFile(self, filetype):
+        """ Lookup dictionary (case statement) for file types """
+        return {
+                'dada': self.inspectDada
+        }.get(filetype, self.readError)()
+
+    def inspectDada(self, n_int=None,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+            """ Inspect a LEDA DADA file and return a dictionary describing the file contents.
+
+            header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
+                                loading data from file, data will be loaded from data_arr
+            data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
+            """
+
+            h1("Inspecting DADA data")
+            if type(header_dict) is dict:
+                h2("Inspecting from shared memory")
+                d = HeaderDataUnit(header_dict, data_arr)
+                flux = data_arr
+                h2("Generating baseline IDs")
+                bls, ant_arr = self.generateBaselineIds(n_ant)
+                bl_lower = []
+                while len(bl_lower) < len(flux):
+                    bl_lower += bls
+            else:
+                h2("Inspecting visibility data")
+                d   = dada.DadaSubBand(self.filename, n_int, inspectOnly=True)
+                self.dada_header = d.header
+                try:
+                    n_chans = int(d.header["NCHAN"])
+                    n_pol   = int(d.header["NPOL"])
+                    n_ant   = int(d.header["NSTATION"])
+
+                    if n_int is None:
+                        n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
+                except ValueError:
+                    print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
+                    raise
+                    
+            # Gather the metadata
+            metadata = {}
+            
+            ## Basic setup
+            metadata['stokes'] = ['XX', 'YY', 'XY', 'YX']
+            metadata['correlator'] = d.header["INSTRUMENT"]
+            metadata['instrument'] = d.header["INSTRUMENT"]
+            metadata['telescope']  = d.header["TELESCOPE"]
+            
+            ## Integration time
+            metadata['tInt'] = float(d.header['NAVG'])*float(d.header['NFFT'])/float(d.header['FREQ'])/1e6
+            
+            ## Time offset
+            dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+            byte_offset = int(d.header["OBS_OFFSET"])
+            bytes_per_avg = int(d.header["BYTES_PER_AVG"])
+            num_int = byte_offset / bytes_per_avg
+            time_offset = num_int * metadata['tInt']
+            dt_obj = dt_obj + timedelta(seconds=time_offset)
+            date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
+            dd_obs   = dt_obj.strftime("%Y-%m-%d")
+            metadata['tstart'] = float(dt_obj.strftime("%s.%f"))
+
+            ## Frequency information
+            metadata['nchan']   = int(d.header["NCHAN"])
+            metadata['reffreq'] = float(d.header["CFREQ"]) * 1e6
+            metadata['chanbw'] = float(d.header["BW"]) * 1e6 / metadata['nchan']
+
+            # Done
+            return metadata
+            
     def _compute_lst_ha(self, src):
         """ Helper function for computing LST, HA, and RA from timestamp
 
@@ -720,7 +816,6 @@ class LedaFits(InterFits):
 
         ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
         freqs = self.formatFreqs()
-        print freqs.shape, np.min(freqs), np.max(freqs)
         w = 2 * np.pi * freqs # Angular freq
 
         try:
@@ -829,6 +924,7 @@ class LedaFits(InterFits):
                 e_yx = np.exp(1j * (pya - pxb))
 
                 phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
+                if nn == 0 and ii == 0:
                 flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
 
 
