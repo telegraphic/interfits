@@ -1,11 +1,14 @@
+*~
 *.uvfits
 *.fitsidi
+*.FITS_1
 *.LA
 *.LC
 *.dada
 *.pyc
 *.h5
 *.hdf5
+*.sc_*
 converter/lconvert
 converter/corr2uvfits
 converter/corr2uvfits.dSYM/

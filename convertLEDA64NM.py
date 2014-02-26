@@ -136,6 +136,13 @@ def main(args):
 		
 		## Save as FITS IDI
 		uvws[0].exportFitsidi(outname)
+		
+		## Cleanup the associated XML file
+		try:
+			xmlname = outname.replace('.FITS_1', '.xml')
+			os.unlink(xmlname)
+		except OSError:
+			pass
 
 
 if __name__ == "__main__":
