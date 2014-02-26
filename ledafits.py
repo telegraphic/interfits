@@ -246,8 +246,7 @@ class LedaFits(InterFits):
                     if n_int is None:
                         n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
                 except ValueError:
-                    print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
-                    raise
+                    raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
 
                 h2("Generating baseline IDs")
                 bls, ant_arr = coords.generateBaselineIds(n_ant)
@@ -482,8 +481,7 @@ class LedaFits(InterFits):
                     if n_int is None:
                         n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
                 except ValueError:
-                    print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
-                    raise
+                    raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
                     
             # Gather the metadata
             metadata = {}
@@ -546,12 +544,7 @@ class LedaFits(InterFits):
                 ha_deg = lst_deg - ra_deg
 
             except ValueError:
-                print "Error: Cannot phase to %s"%src
-                print "Choose one of: ZEN, ",
-                for src in src_names:
-                    print "%s, "%src,
-                print "\n"
-                raise
+                raise ValueError("Cannot phase to unknown source '%s'" % src)
 
         return ra_deg, dec_deg, lst_deg, ha_deg
 
@@ -874,8 +867,7 @@ class LedaFits(InterFits):
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'
         except AssertionError:
-            print self.d_uv_data["FLUX"].dtype
-            raise
+             raise RuntimeError("Unexpected data type for FLUX: %s" % str(self.d_uv_data["FLUX"].dtype))
         flux  = self.d_uv_data["FLUX"].view('complex64')
 
         bls = set(self.d_uv_data["BASELINE"])
@@ -919,8 +911,7 @@ class LedaFits(InterFits):
         try:
             els   = self.z_elength["EL"]
         except:
-            print "ERROR: No cable delay data for telescope %s"%self.telescope
-            raise
+            raise RuntimeError("No cable delay data for telescope '%s'" % self.telescope)
         els   = np.array(els)
         tdelts = els / sol
 
@@ -935,8 +926,7 @@ class LedaFits(InterFits):
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'
         except AssertionError:
-            print self.d_uv_data["FLUX"].dtype
-            raise
+            raise RuntimeError("Unexpected data type for FLUX: %s" % str(self.d_uv_data["FLUX"].dtype))
             
         # Convert the data to complex values
         flux  = self.d_uv_data["FLUX"].view('complex64')

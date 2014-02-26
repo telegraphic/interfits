@@ -129,7 +129,7 @@ def main(args):
 		uvws[0].apply_cable_delays()
 		
 		## Phase to zenith
-		uvws[0].phase_to_src(src='ZEN', debug=False)
+		uvws[0].phase_to_src(src='ZEN')
 		
 		## Verify
 		uvws[0].verify()
