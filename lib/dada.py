@@ -89,13 +89,16 @@ class DadaSubBand(object):
         # Load entire file unless n_int is specified
         if not inspectOnly:
             if n_int is None:
-                file_size = int(self.header["FILE_SIZE"])
-                bpa       = int(self.header["BYTES_PER_AVG"])
+                file_size_hdr = int(self.header["FILE_SIZE"])
+                file_size_dsk = os.path.getsize(filename)
+                file_size     = min([file_size_hdr, file_size_dsk])
+                bpa           = int(self.header["BYTES_PER_AVG"])
+                
                 n_int = file_size / bpa
                 
             self.read_data(0, n_int=n_int)
             self.datestamp = self.header['UTC_START']
-
+            
     def __repr__(self):
        return str(self.header)
 
@@ -131,6 +134,7 @@ class DadaSubBand(object):
         self.bandwidth = float(lookup_warn(header, 'BW', 1.))
         self.nchan = int(header['NCHAN'])
         self.npol = int(header['NPOL'])
+        
         try:
             self.nstation = int(header['NSTAND'])
         except KeyError:

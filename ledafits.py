@@ -244,7 +244,11 @@ class LedaFits(InterFits):
                     n_ant   = int(d.header["NSTATION"])
 
                     if n_int is None:
-                        n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
+                        file_size_hdr = int(d.header["FILE_SIZE"])
+                        file_size_dsk = os.path.getsize(self.filename)
+                        file_size     = min([file_size_hdr, file_size_dsk])
+                        bpa           = int(d.header["BYTES_PER_AVG"])
+                        n_int = file_size / bpa
                 except ValueError:
                     raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
 
