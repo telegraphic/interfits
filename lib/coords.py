@@ -2,10 +2,11 @@
 # encoding: utf-8
 """
 coords.py
-======
+=========
 
-Helper utilities from reading and writing JSON data with numpy arrays. The native JSON
-encoder cannot handle numpy arrays and will chuck a hissy-fit, hence these helper functions.
+Coordinate and time transforms required for generating correct timestamps and UVW
+coordinates.
+
 """
 
 import time
@@ -15,7 +16,9 @@ import numpy as np
 import time, calendar
 from datetime import datetime
 
-LIGHT_SPEED = 299792458 # From Google
+from numpy import sin, cos
+
+LIGHT_SPEED = 299792458.0 # From Google
 
 class AntArray(ephem.Observer):
     """ An antenna array class.
@@ -66,58 +69,129 @@ def makeSource(name, ra, dec, flux=0, epoch=2000):
     body = ephem.readdb(line)
     return body
 
-def computeUVW(xyz, H, d, conjugate=False, in_microseconds=True, t_matrix=None):
-    """ Converts X-Y-Z coordinates into U-V-W
-    Uses the transform from Thompson Moran Swenson (4.1, pg86)
+def generateBaselineIds(n_ant=32, autocorrs=True):
+    """ Generate a list of unique baseline IDs and antenna pairs
+
+    This uses the MIRIAD definition for >256 antennas:
+    bl_id = 2048*ant1 + ant2 + 65536
+
+    n_ant: number of antennas in the array
+    autocorrs: include antenna autocorrelations?
+
+    TODO: Rewrite for speed (itertools?)
+    """
+
+    bls, ant_arr = [], []
+    for ii in range(1, n_ant + 1):
+        for jj in range(1, n_ant + 1):
+            if jj >= ii:
+                if autocorrs is False and ii == jj:
+                    pass
+                else:
+                    ant_arr.append((ii, jj))
+                    if ii > 255 or jj > 255:
+                        bl_id = ii * 2048 + jj + 65536
+                    else:
+                        bl_id = 256 * ii + jj
+                    bls.append(bl_id)
+    return bls, ant_arr
+
+def computeUVW(xyz, H, d, in_seconds=True, conjugate=False):
+    """ Converts X-Y-Z baselines into U-V-W
 
     Parameters
     ----------
-    xyz: should be a numpy array [x,y,z]
+    xyz: should be a numpy array [x,y,z] of baselines (NOT ANTENNAS!)
     H: float (float, radians) is the hour angle of the phase reference position
     d: float (float, radians) is the declination
-    in_seconds (bool): Return in microseconds (True) or meters (False)
-    t_matrix (np.matrix): Default none. Can alternatively supply the transform
-                          matrix to be used (useful for speed optimization).
+    conjugate: (bool): Conjugate UVW coordinates?
+    in_seconds (bool): Return in seconds (True) or meters (False)
     Returns uvw vector (in microseconds)
-    """
-    xyz = np.matrix(xyz) # Cast into a matrix
 
-    if H > 2*np.pi or d > 2*np.pi:
-        raise TypeError("HA and DEC are not in radians!")
-
-    if t_matrix is None:
-        sin = np.sin
-        cos = np.cos
-
-        #H, d = np.deg2rad(H), np.deg2rad(d)
-
-        trans = np.matrix([
+    Notes
+    -----
+    The transformation is precisely that from the matrix relation 4.1 in
+    Thompson Moran Swenson:
               [sin(H), cos(H), 0],
               [-sin(d)*cos(H), sin(d)*sin(H), cos(d)],
               [cos(d)*cos(H), -cos(d)*sin(H), sin(d)]
-            ])
-    else:
-        trans = t_matrix
 
-    uvw = trans * xyz.T
-    uvw = np.array(uvw)
-    if conjugate:
-        uvw = -1 * uvw
-    if in_microseconds:
-        return uvw[:,0] / LIGHT_SPEED
-    else:
-        return uvw[:,0]
+    A right-handed Cartesian coordinate system is used where X
+    and Y are measured in a plane parallel to the earth's equator, X in the meridian
+    plane (defined as the plane through the poles of the earth and the reference point
+    in the array), Y is measured toward the east, and Z toward the north pole. In terms
+    of hour angle H and declination d, the coordinates (X, Y, Z) are measured toward
+    (H = 0, d = 0), (H = -6h, d = O), and (d = 90"), respectively.
 
+    Here (H, d) are usually the hour angle and declination of the phase reference
+    position.
 
-def altaz2cartesian(alt, az, r=1):
-    """ Convert ALT AZ to cartesian coords
-
-    alt, az in radians
     """
-    x = r * np.cos(alt) * np.sin(az)
-    y = r * np.cos(alt) * np.cos(az)
-    z = r * np.sin(alt)
-    return np.array([x, y, z])
+    is_list = True
+    if type(xyz) in (list, tuple):
+        x, y, z = xyz
+    if type(xyz) == type(np.array([1])):
+        is_list = False
+        try:
+            print xyz.shape
+            x, y, z = np.split(xyz, 3, axis=1)
+        except:
+            print xyz.shape
+            raise
+
+    sh, sd = sin(H), sin(d)
+    ch, cd = cos(H), cos(d)
+    u  = sh * x + ch * y
+    v  = -sd * ch * x + sd * sh * y + cd * z
+    w  = cd * ch * x - cd * sh * y + sd * z
+
+    if is_list:
+        uvw = np.array((u, v, w))
+    else:
+        uvw = np.column_stack((u, v, w))
+
+    if conjugate:
+        uvw *= -1
+    if in_seconds:
+        return uvw / LIGHT_SPEED
+    else:
+        return uvw
+
+def computeBaselineVectors(xyz, autocorrs=True):
+    """ Compute all the possible baseline combos for antenna array
+
+    Parameters
+    ----------
+    xyz: np.array of antenna positions.
+    autocorrs: (bool) baselines should contain autocorrs (zero-length baselines)
+
+    Returns
+    -------
+    XYZ array of all antenna combinations, in ascending antenna IDs.
+    """
+    try:
+        assert type(xyz) == type(np.array([1]))
+    except AssertionError:
+        xyz = np.array(xyz)
+        if xyz.shape[1] != 3:
+            raise ValueError("Cannot understand input XYZ array")
+
+    n_ant = xyz.shape[0]
+    if autocorrs:
+        bls = np.zeros([n_ant * (n_ant - 1) / 2 + n_ant, 3])
+    else:
+        bls = np.zeros([n_ant * (n_ant - 1) / 2, 3])
+
+    bls_idx = 0
+    for ii in range(n_ant):
+        for jj in range(n_ant):
+            if jj >= ii:
+                if autocorrs is False and ii == jj:
+                    pass
+                else:
+                    bls[bls_idx] = xyz[ii] - xyz[jj]
+                    bls_idx += 1
+    return bls
 
 def geo2ecef(lat, lon, elev):
     """
@@ -137,7 +211,6 @@ def geo2ecef(lat, lon, elev):
     z = ((WGS84_b**2/WGS84_a**2)*N+elev)*np.sin(lat)
 
     return (x, y, z)
-
 
 def ecef2geo(x, y, z):
     """
@@ -187,7 +260,7 @@ def convertToJulianTuple(timestamp):
     
     # Figure out exactly what type of timestamp we've got.
     if type(timestamp) in (str, unicode):
-        tt = time.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+        tt = parse_timestring(timestamp)
         ts = calendar.timegm(tt)
     elif type(timestamp) is float:
         ts = timestamp
@@ -211,12 +284,17 @@ def convertToJulianTuple(timestamp):
 
     return julian_midnight, time_elapsed
 
-
 def parse_timestring(tstring):
     """ Convert timestring into timestamp """
-    if re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d\d", tstring):
-        return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
-    elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d", tstring):
-        return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S")
-    else:
-        raise ValueError("Cannot parse %s"%tstring)
+    try:
+        if re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d+$", tstring):
+            return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
+        elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d$", tstring):
+            return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S.%f")
+        elif re.match("\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d$", tstring):
+            return time.strptime(tstring, "%Y-%m-%dT%H:%M:%S")
+        else:
+            raise ValueError("Cannot parse %s"%tstring)
+    except ValueError:
+        print tstring
+        raise

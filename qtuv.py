@@ -75,7 +75,13 @@ except:
     print "Error: cannot load Pylab. Check your matplotlib install."
     exit()
 
-from interfits import *
+try:
+    from ledafits import *
+    InterFits = LedaFits
+except:
+    print "Warning: cannot load ledafits. Defaulting to Interfits..."
+    from interfits import *
+
 
 class InterFitsGui(QtGui.QWidget):
     """ Qt GUI class
@@ -87,13 +93,15 @@ class InterFitsGui(QtGui.QWidget):
     filename: str
         Name of file to open. Defaults to blank, in which case no file is opened.
     """
-    def __init__(self, filename=''):
+    def __init__(self, filename='', save_autos=False):
         super(InterFitsGui, self).__init__()
         
         # Initialize user interface
         self.filename = filename
         self.current_row = 0
         self.initUI(width=1200, height=800)
+        if save_autos:
+            self.save_plots()
 
     def initUI(self, width=1200, height=800):
         """ Initialize the User Interface 
@@ -358,22 +366,33 @@ class InterFitsGui(QtGui.QWidget):
             plt.ylabel("Amplitude")
             plt.legend()
 
+    def plotfunc(self, ax, data, vmin=None, vmax=None):
+        """ Trick plot into accepting vmin and vmax """
+        if data.shape[0] == 1:
+            return ax.plot(data[0])
+        else:
+            return ax.imshow(data, vmin=vmin, vmax=vmax)
+
+
     def plot_imshow(self, ax, data, stat=None, show_cbar=False, label_axes=True):
         """ Imshow plotter """
 
         if len(data.shape) == 1:
             data = np.reshape(data, (1, len(data)))
 
+        if data.shape[0] == 1:
+            show_cbar = False
+
         if stat == 'amp':
             if self.scale_select.currentIndex() != 1:
-                img = ax.imshow(np.abs(data))
+                img = self.plotfunc(ax, np.abs(data))
             else:
-                img = ax.imshow(10*np.log10(np.abs(data)))
+                img = self.plotfunc(ax, 10*np.log10(np.abs(data)))
             if label_axes: plt.title("Amplitude")
             if show_cbar:
                 cbar = self.sp_fig.colorbar(img, orientation='horizontal')
         if stat == 'phase':
-            img = ax.imshow(np.angle(data), vmin=-np.pi, vmax=np.pi)
+            img = self.plotfunc(ax, np.angle(data), vmin=-np.pi, vmax=np.pi)
             if label_axes: plt.title("Phase")
             if show_cbar:
                 cbar = self.sp_fig.colorbar(img, orientation='horizontal')
@@ -383,19 +402,26 @@ class InterFitsGui(QtGui.QWidget):
         if stat == 'delay':
             abs, fft, fft_shift, log10 = np.abs, np.fft.fft, np.fft.fftshift, np.log10
             if self.scale_select.currentIndex() != 1:
-                img = ax.imshow(abs(fft(data, axis=1)))
+                img = self.plotfunc(ax, abs(fft_shift(fft(data, axis=1))))
             else:
-                img = ax.imshow(10*log10(abs(fft(data, axis=1))))
+                img = self.plotfunc(ax, 10*log10(abs(fft_shift(fft(data, axis=1)))))
             if label_axes: plt.title("Delay")
             if show_cbar:
                 cbar = self.sp_fig.colorbar(img, orientation='horizontal')
 
-        ax.set_aspect(data.shape[1] / data.shape[0] * 3. / 4)
+        if data.shape[0] != 1:
+            ax.set_aspect(data.shape[1] / data.shape[0] * 3. / 4)
+
         if label_axes:
-            self.updateFreqAxis(ax, n_ticks=5)
-            plt.ylabel("Time")
-            plt.xlabel("Frequency")
-        
+            if stat in ("phase", "amp", None):
+                self.updateFreqAxis(ax, n_ticks=5)
+                plt.xlabel("Frequency")
+            if stat in ("delay"):
+                self.updateFreqAxis(ax, n_ticks=5, delay=True)
+                plt.xlabel("Delay (us)")
+            if data.shape[0] != 1:
+                plt.ylabel("Time")
+
         return img
         
     def plot_single_baseline(self, ant1, ant2, axis=0):
@@ -521,8 +547,6 @@ class InterFitsGui(QtGui.QWidget):
         # Extract the relevant baselines using a truth array
 
         #bls = bls.tolist()
-
-        #TODO: Make this work quicker!
         #bl_ids = self.uv.search_baselines(ref_ant)
         bl_lower = []
         if ref_ant > 1:
@@ -536,8 +560,8 @@ class InterFitsGui(QtGui.QWidget):
         #x_cplx    = x_data[:,:,0] + 1j * x_data[:,:,1]
         x_cplx = self.stokes[axis][bl_truths]
 
-        print ref_ant
-        print x_cplx.shape
+        #print ref_ant
+        #print x_cplx.shape
         
         # Plot the figure
         fig = self.sp_fig
@@ -556,16 +580,18 @@ class InterFitsGui(QtGui.QWidget):
                     ax.set_xlabel('Freq')
                 else: 
                     ax.set_xlabel('')
-                if j == 0:
+                if j == 0 and x.shape[0] != 1:
                     ax.set_ylabel('Time')
                 else:
                     ax.set_ylabel('')
-                ax.set_aspect(x.shape[1] / x.shape[0])
+
+                if x.shape[0] != 1:
+                    ax.set_aspect(x.shape[1] / x.shape[0])
                 ax.set_title("%s %s"%(ref_ant, i*n_cols + j +1))
                 self.updateFreqAxis(ax)
                 plt.xticks(rotation=30)
         
-        if plot_type == 'phase':
+        if plot_type == 'phase' and x.shape[0] != 1:
             # Add phase colorbar
             cax = fig.add_axes([0.925,0.08,0.015,0.8])
             cbar = fig.colorbar(img, cax=cax)
@@ -598,7 +624,7 @@ class InterFitsGui(QtGui.QWidget):
 
         x_cplx  = self.stokes[axis][bl_truths]
 
-        #print x_cplx.shape
+
         
         # Plot the figure
         #print self.uv.n_ant
@@ -613,9 +639,12 @@ class InterFitsGui(QtGui.QWidget):
                 x = x_cplx[i*n_cols+j::self.uv.n_ant]
                 
                 if self.scale_select.currentIndex() == 0 or self.scale_select.currentIndex() == 1:
-                    self.plot_spectrum(ax, x, stat='max', label_axes=False)
-                    self.plot_spectrum(ax, x, stat='med', label_axes=False)
-                    self.plot_spectrum(ax, x, stat='min', label_axes=False)
+                    if x.shape[0] == self.uv.n_ant:
+                        self.plot_spectrum(ax, x, label_axes=False)
+                    else:
+                        self.plot_spectrum(ax, x, stat='max', label_axes=False)
+                        self.plot_spectrum(ax, x, stat='med', label_axes=False)
+                        self.plot_spectrum(ax, x, stat='min', label_axes=False)
                 else:
                     self.plot_spectrum(ax, x, label_axes=False)
                 self.updateFreqAxis(ax)
@@ -720,7 +749,7 @@ class InterFitsGui(QtGui.QWidget):
         """ Spinner action: update data axes """
         pass
     
-    def updateFreqAxis(self, ax, n_ticks=5):
+    def updateFreqAxis(self, ax, n_ticks=5, delay=False):
         """ Update frequency axis of imshow plot """
         rf  = self.uv.h_common['REF_FREQ'] /1e6
         chw = self.uv.d_frequency['CH_WIDTH'] / 1e6
@@ -746,7 +775,11 @@ class InterFitsGui(QtGui.QWidget):
         #print tlocs
         #print tlabs
         ax.set_xticks(tlocs)
-        ax.set_xticklabels(["%2.2f"%tt for tt in tlabs])
+        if not delay:
+            ax.set_xticklabels(["%2.2f"%tt for tt in tlabs])
+        else:
+            tlabs = np.linspace(-1.0/chw/1e3 * nchan/2, 1.0/chw/1e3 * nchan/2, n_ticks)
+            ax.set_xticklabels(["%2.2f"%tt for tt in tlabs])
     
     def onFileOpen(self):
         """ Do this whenever a new file is opened """
@@ -791,6 +824,17 @@ class InterFitsGui(QtGui.QWidget):
         """ Button action: Open statistics """
         pass
 
+    def save_plots(self):
+        """ Save dual-pol plots to file """
+        pdir = os.path.splitext(self.filename)[0] + '_plots'
+        if not os.path.exists(pdir):
+            os.mkdir(pdir)
+
+        for ii in range(self.uv.n_ant):
+            fig, ax = self.plot_single_baseline_dual_pol(ii+1, ii+1)
+            print "Saving ant %i"%ii
+            plt.savefig(os.path.join(pdir, 'ant-%i.png'%ii))
+            plt.clf()
 
 def main():
     
@@ -806,7 +850,7 @@ def main():
     
     try:
         filename = args[0]
-        main_gui = InterFitsGui(filename)
+        main_gui = InterFitsGui(filename, save_autos=False)
     except:
         main_gui = InterFitsGui()
     app.exec_()

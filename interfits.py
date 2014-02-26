@@ -18,9 +18,11 @@ import pyfits as pf
 import numpy as np
 from lxml import etree
 import h5py
+import ephem
 
 from lib.pyFitsidi import *
 from lib.json_numpy import *
+from lib import coords
 
 
 class LinePrint():
@@ -143,6 +145,7 @@ class InterFits(object):
                 file_ext = os.path.splitext(filename)[1][1:]
                 self._readFile(file_ext)
 
+
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
         return {
@@ -156,6 +159,27 @@ class InterFits(object):
             'h5': self.readHdf5,
             'json': self.readJson
         }.get(filetype, self.readError)()
+
+    def _initialize_site(self):
+        """ Setup site (ephem observer)
+
+        Uses ecef2geo function (Bowring's method), to convert
+        ECEF to Lat-Long-Elev, then creates an ephem observer.
+        """
+        x = self.h_array_geometry["ARRAYX"]
+        y = self.h_array_geometry["ARRAYY"]
+        z = self.h_array_geometry["ARRAYZ"]
+        lat, long, elev = coords.ecef2geo(x, y, z)
+
+        site      = ephem.Observer()
+        site.lon  = long * 180 / np.pi
+        site.lat  = lat * 180 / np.pi
+        site.elev = elev
+
+        print "Telescope: %s"%self.telescope
+        print "Latitude:  %s"%self.site.lat
+        print "Longitude: %s"%self.site.long
+        print "Elevation: %s"%self.site.elev
 
     def readError(self):
         """ Raise an error if file cannot be read """
@@ -204,11 +228,30 @@ class InterFits(object):
         h1("Opening uvfits data")
 
         self.fits = pf.open(self.filename)
-        self.uvdata = self.fits[0].data
-        self.uvhead = self.fits[0].header
+        #print self.fits
 
-        self.antdata = self.fits[1].data
-        self.anthead = self.fits[1].header
+        # Set if source / freq tables are present
+        is_source = False
+        is_freq   = False
+
+        for tbl in self.fits:
+            try:
+                tbl_name = tbl.header["EXTNAME"].strip()
+                if tbl_name == 'AIPS AN':
+                    self.antdata = tbl.data
+                    self.anthead = tbl.header
+                if tbl_name == "AIPS FQ":
+                    is_freq = True
+                    self.freqdata = tbl.data
+                    self.freqhead = tbl.header
+                if tbl_name == "AIPS SU":
+                    is_source = True
+                    self.sourcedata = tbl.data
+                    self.sourcehead = tbl.header
+            except KeyError:
+                # UV_DATA table doesn't have EXTNAME!
+                self.uvdata = tbl.data
+                self.uvhead = tbl.header
 
         # Load basic metadata
         self.telescope = self.uvhead['TELESCOP'].strip()
@@ -251,23 +294,28 @@ class InterFits(object):
         c = [(ct, self.uvhead[ct], self.uvhead['NAXIS%s' % ct.lstrip('CTYPE')]) for ct in ctypes]
         freq_cid = c[[x[1] == 'FREQ' for x in c].index(True)][0].lstrip('CTYPE')
 
-        ch_width = float(self.uvhead['CDELT%s' % freq_cid])
-        ref_freq = float(self.uvhead['CRVAL%s' % freq_cid])
-        ref_pixl = float(self.uvhead['CRPIX%s' % freq_cid])
-        bw = ch_width * int(self.uvhead['NAXIS%s' % freq_cid])
+        ch_width = float(self.uvhead['CDELT%s'%freq_cid])
+        ref_freq = float(self.uvhead['CRVAL%s'%freq_cid])
+        ref_pixl = float(self.uvhead['CRPIX%s'%freq_cid])
+        bw = ch_width * int(self.uvhead['NAXIS%s'%freq_cid])
         self.h_common['REF_FREQ'] = ref_freq
         self.h_common['CHAN_BW'] = ch_width
         self.h_common['REF_PIXL'] = ref_pixl
+        self.h_common['NO_CHAN'] = int(self.uvhead['NAXIS%s'%freq_cid])
 
         self.d_frequency['TOTAL_BANDWIDTH'] = bw
         self.d_frequency['CH_WIDTH'] = ch_width
 
         # Load source table data
         h2("Loading source table")
-        self.d_source['SOURCE'] = self.source
-        self.d_source['RAEPO'] = self.uvhead['OBSRA']
-        self.d_source['DECEPO'] = self.uvhead['OBSDEC']
-
+        if not is_source:
+            self.d_source['SOURCE'] = self.source
+            self.d_source['RAEPO']  = self.uvhead['OBSRA']
+            self.d_source['DECEPO'] = self.uvhead['OBSDEC']
+        else:
+            self.d_source['SOURCE'] = self.sourcedata["SOURCE"]
+            self.d_source['RAEPO']  = self.sourcedata["RAEPO"]
+            self.d_source['DECEPO'] = self.sourcedata["DECEPO"]
 
 
         # Load UV-DATA
@@ -279,7 +327,6 @@ class InterFits(object):
         for k in uv_datacols: self.d_uv_data[k] = self.uvdata[k]
 
         s = self.uvdata['DATA'].shape
-
         # Find stokes axis type and values
         stokes_axid = 0
         for ct in ctypes:
@@ -297,8 +344,9 @@ class InterFits(object):
         # Should have 7 axes, likely
         if len(s) != 7:
             if len(s) == 6:
-                #print "Reshaping uv-data..."
+                print "Reshaping uv-data..."
                 new_shape = (s[0], s[1], s[2], 1, s[3], s[4], s[5])
+                s = new_shape
                 self.d_uv_data['DATA'] = self.uvdata['DATA'].reshape(new_shape)
             else:
                 print "ERROR: Data axis not understood, incorrect length"
@@ -311,7 +359,7 @@ class InterFits(object):
         # Best line in the history of indexing below
         # Note the 0:2 and *2 at the end is to not include weights
         print "Converting DATA column to FLUX convention..."
-        self.d_uv_data['FLUX'] = self.d_uv_data['DATA'][..., 0:2].astype('float32').reshape(s[0], s[3] * s[4] * 2)
+        self.d_uv_data['FLUX'] = self.d_uv_data['DATA'][..., 0:2].astype('float32').reshape(s[0], s[4] * s[5] * 2)
 
         self.h_params["NSTOKES"] = len(self.stokes_vals)
         self.h_params["NBAND"] = self.d_uv_data['DATA'].shape[-4]
@@ -1117,6 +1165,7 @@ class InterFits(object):
             print "CHAN_BW: %s\n REF_PIXL: %s\n REF_FREQ: %s\n NO_CHAN %s"%(ref_delt, ref_pix, ref_val, num_pix)
             print "Error: %s" % str(e)
             raise ValueError("Frequency values are fubarred.")
+
         return freqs
 
 
@@ -1141,6 +1190,28 @@ class InterFits(object):
         else:
             bl_id = ant1 * 256 + ant2
         return bl_id
+
+    def extract_integrations(self, start=None, stop=None):
+        """ Extract a subset of integrations """
+
+        bls = self.d_uv_data["BASELINE"]
+        n_bls = self.n_ant * (self.n_ant - 1) / 2 + self.n_ant
+        n_dumps = len(bls) / n_bls
+
+        if start is None:
+            start = 0
+        if stop is None:
+            stop = n_dumps
+
+        try:
+            assert stop <= n_dumps
+            assert start <= stop
+        except AssertionError:
+            raise ValueError("Integration start and stop points invalid. (%s, %s)"%(start, stop))
+
+        for k in self.d_uv_data.keys():
+            self.d_uv_data[k] = self.d_uv_data[k][start * n_bls:stop * n_bls]
+
 
     def search_baselines(self, ref_ant, triangle='upper'):
         """ Retrieve baseline ids that contain a given antenna
