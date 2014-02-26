@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""
+Script to plot the autocorrelations in a LEDA64-NM FITS-IDI file.
+"""
+
 import os
 import sys
 import numpy

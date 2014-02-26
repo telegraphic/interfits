@@ -30,19 +30,20 @@ UTC = pytz.UTC
 
 
 def usage(exitCode=None):
-	print """imageIDI.py - Create images from a FITS-IDI file
+	print """imageLEDA64NM.py - Create images from a LEDA64-NM FITS-IDI file
 
-Usage: imageIDI.py [OPTIONS] file
+Usage: imageLEDA64NM.py [OPTIONS] file
 
 Options:
 -h, --help             Display this help information
--1, --freq-start       First frequency to image in MHz (Default = 10 MHz)
+-1, --freq-start       First frequency to image in MHz (Default = 35 MHz)
 -2, --freq-stop        Last frequency to image in MHz (Default = 88 MHz)
 -s, --dataset          Data set to image (Default = All)
 -m, --uv-min           Minimun baseline uvw length to include 
                        (Default = 0 lambda at midpoint frequency)
 -n, --no-labels        Disable source and grid labels
 -g, --no-grid          Disable the RA/Dec grid
+-i, --include-suspect  Include suspect baselines (Default = no)
 """
 
 	if exitCode is not None:
@@ -54,17 +55,18 @@ Options:
 def parseConfig(args):
 	config = {}
 	# Command line flags - default values
-	config['freq1'] = 10e6
+	config['freq1'] = 35e6
 	config['freq2'] = 88e6
 	config['dataset'] = 0
 	config['uvMin'] = 0.0
 	config['label'] = True
 	config['grid'] = True
+	config['suspect'] = False
 	config['args'] = []
 	
 	# Read in and process the command line flags
 	try:
-		opts, arg = getopt.getopt(args, "h1:2:s:m:ng", ["help", "freq-start=", "freq-stop=", "dataset=", "uv-min=", "no-labels", "no-grid"])
+		opts, arg = getopt.getopt(args, "h1:2:s:m:ngi", ["help", "freq-start=", "freq-stop=", "dataset=", "uv-min=", "no-labels", "no-grid", "include-suspect"])
 	except getopt.GetoptError, err:
 		# Print help information and exit:
 		print str(err) # will print something like "option -a not recognized"
@@ -86,6 +88,8 @@ def parseConfig(args):
 			config['label'] = False
 		elif opt in ('-g', '--no-grid'):
 			config['grid'] = False
+		elif opt in ('-i', '--include-suspect'):
+			config['suspect'] = True
 		else:
 			assert False
 	
@@ -186,7 +190,6 @@ def graticle(ax, lst, lat, label=True):
 			ax.text(xyz[0], xyz[1], '%i$^h$' % (ra/15,), color='white')
 
 
-
 def main(args):
 	config = parseConfig(args)
 	filename = config['args'][0]
@@ -206,6 +209,27 @@ def main(args):
 	
 	print "Reading in FITS IDI data"
 	nSets = idi.totalBaselineCount / (nStand*(nStand+1)/2)
+	
+	# "Bad" baselines
+	badBaselines = []
+	for i in xrange(nStand):
+		std1 = idi.stands[i]
+		for j in xrange(i, nStand):
+			bl = (i,j)
+			std2 = idi.stands[j]
+			
+			# Switching frontends
+			if std1 in (35, 257, 259) or std2 in (35, 257, 259):
+				badBaselines.append(bl)
+				
+			# Currently disconnected
+			if std1 in (108,) or std2 in (108,):
+				badBaselines.append(bl)
+				
+			# ASP RJ45 antenna pairs that may have an enhanced DC component
+			if i != j and i/2 == j/2:
+				badBaselines.append(bl)
+				
 	for set in range(1, nSets+1):
 		if config['dataset'] != 0 and config['dataset'] != set:
 			continue
@@ -213,18 +237,14 @@ def main(args):
 		print "Set #%i of %i" % (set, nSets)
 		dataDict = idi.getDataSet(set, uvMin=config['uvMin'])
 		
-		bad = []
-		for i,s in enumerate(idi.stands):
-			if s in (259, 257, 35, 108):
-				bad.append(i)
-				
 		pols = dataDict['bls'].keys()
-		for b in bad:
+		if not config['suspect']:
+			# Cleanup "bad" baselines
+			pols = dataDict['bls'].keys()
 			for pol in pols:
 				for i in xrange(len(dataDict['bls'][pol])):
 					try:
-						a1,a2 = dataDict['bls'][pol][i]
-						if a1 == b or a2 == b:
+						if dataDict['bls'][pol][i] in badBaselines:
 							for key in ('bls', 'uvw', 'vis', 'wgt', 'msk', 'jd'):
 								del dataDict[key][pol][i]
 					except IndexError:

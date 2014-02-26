@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""
+Script for creating POSSM-style plots from a LEDA64-NM FITS-IDI file.
+"""
+
 import os
 import sys
 import numpy
@@ -34,7 +38,7 @@ def main(args):
 	print "Spectra Coverage: %.3f to %.3f MHz in %i channels (%.2f kHz/channel)" % (freq[0]/1e6, freq[-1]/1e6, nChan, (freq[-1] - freq[0])/1e3/nChan)
 	print "Polarization Products: %i starting with %i" % (len(idi.pols), idi.pols[0])
 	print "JD: %.3f" % jd
-
+	
 	print "Reading in FITS IDI data"
 	print idi.totalBaselineCount
 	nSets = idi.totalBaselineCount / (nStand*(nStand+1)/2)
@@ -44,7 +48,7 @@ def main(args):
 	for set in range(1, nSets+1):
 		print "Set #%i of %i" % (set, nSets)
 		dataDict = idi.getDataSet(set, includeAuto=True)
-	
+		
 		print "Plotting the first %i baselines of %s" % (numToPlot, polToPlot.upper(),)
 		pols = dataDict['jd'].keys()
 		nBL = len(dataDict['bls'][polToPlot])
@@ -52,7 +56,7 @@ def main(args):
 		i = 0
 		for k in range(numToPlot/25):
 			fig = plt.figure()
-
+			
 			for j in range(25):
 				try:
 					stnd1, stnd2 = dataDict['bls'][polToPlot][i]
@@ -61,7 +65,7 @@ def main(args):
 				except IndexError:
 					plt.draw()
 					break
-
+					
 				amp = numpy.log10(numpy.abs(vis))*10
 				phs = numpy.angle(vis)*180/numpy.pi
 				
@@ -90,7 +94,7 @@ def main(args):
 		sys.stdout.write('\n')
 		sys.stdout.flush()
 		plt.show()
-	
+
 
 if __name__ == "__main__":
 	numpy.seterr(all='ignore')
