@@ -74,6 +74,9 @@ def main(args):
 			print "      %i: %s from %.2f to %.2f MHz" % (j+1, os.path.basename(name), start/1e6, stop/1e6)
 		validity.append(valid)
 		print "    -> valid set? %s" % valid
+		
+		## Reset the validity between groups
+		del oldStop
 	print " "
 	
 	# Combine
@@ -139,7 +142,7 @@ def main(args):
 		
 		## Cleanup the associated XML file
 		try:
-			xmlname = outname.replace('.FITS_1', '.xml')
+			xmlname = outname+'.xml'
 			os.unlink(xmlname)
 		except OSError:
 			pass
