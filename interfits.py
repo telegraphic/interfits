@@ -1191,28 +1191,6 @@ class InterFits(object):
             bl_id = ant1 * 256 + ant2
         return bl_id
 
-    def extract_integrations(self, start=None, stop=None):
-        """ Extract a subset of integrations """
-
-        bls = self.d_uv_data["BASELINE"]
-        n_bls = self.n_ant * (self.n_ant - 1) / 2 + self.n_ant
-        n_dumps = len(bls) / n_bls
-
-        if start is None:
-            start = 0
-        if stop is None:
-            stop = n_dumps
-
-        try:
-            assert stop <= n_dumps
-            assert start <= stop
-        except AssertionError:
-            raise ValueError("Integration start and stop points invalid. (%s, %s)"%(start, stop))
-
-        for k in self.d_uv_data.keys():
-            self.d_uv_data[k] = self.d_uv_data[k][start * n_bls:stop * n_bls]
-
-
     def search_baselines(self, ref_ant, triangle='upper'):
         """ Retrieve baseline ids that contain a given antenna
 
@@ -1243,3 +1221,67 @@ class InterFits(object):
         else:
             print "Lower triangle not supported yet"
             raise
+
+    def extract_integrations(self, start=None, stop=None):
+        """ Extract a subset of integrations from the file
+
+        Parameters
+        ----------
+        start: int
+            Start of slice point. Integrations are numbered from zero (0).
+        stop: int
+            End of slice. For example, start=0, stop=1 will return the first integration.
+        """
+
+        bls = self.d_uv_data["BASELINE"]
+        n_bls = self.n_ant * (self.n_ant - 1) / 2 + self.n_ant
+        n_dumps = len(bls) / n_bls
+
+        if start is None:
+            start = 0
+        if stop is None:
+            stop = n_dumps
+
+        try:
+            assert stop <= n_dumps
+            assert start <= stop
+        except AssertionError:
+            raise ValueError("Integration start and stop points invalid. (%s, %s)"%(start, stop))
+
+        for k in self.d_uv_data.keys():
+            self.d_uv_data[k] = self.d_uv_data[k][start * n_bls:stop * n_bls]
+
+    def extract_antenna(self, antenna_id, timestamps=False):
+        """ Extract autocorrelation of a give antenna
+
+        Parameters
+        ----------
+        antenna_id: int
+            ID of antenna to extract
+        timestamps: bool
+            Default False. Returns (timestamps, data) tuple if true,
+            else returns only data
+
+        Returns
+        -------
+        Returns array with dimensions (n_stokes, n_int, n_channel)
+        if timestamps arg is set to True, returns (timestamps, data)
+        """
+
+        bls   = self.d_uv_data["BASELINE"]
+        bl_id = antenna_id * 256 + antenna_id
+
+        try:
+            stokes = self.stokes
+        except AttributeError:
+            self.stokes = self.formatStokes()
+            stokes = self.stokes
+
+        data = stokes[:, bls == bl_id]
+        if timestamps is False:
+            return data
+        else:
+            ts = self.d_uv_data["TIME"]
+            ts = ts[bls == bl_id]
+            return ts, data
+
