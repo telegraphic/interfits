@@ -17,8 +17,9 @@ corr2uvfits: corr2uvfits.c uvfits.c libsla.a
 	ranlib libsla.a
 	cc $(CFLAGS) $(INCS) $(CFITSIO_INCS) -o corr2uvfits corr2uvfits.c uvfits.c $(CFITSIO_LIBS) -lcfitsio -lsla -lm
 	
-lconvert:  Lconverter512OV.c
-	g++ -o lconvert Lconverter512OV.c
+lconvert:  Lconverter512OV.c Lconverter64NM.c
+	cc -o lconvert512OV Lconverter512OV.c
+	cc -o lconvert64NM Lconverter64NM.c
 
 libsla.a:
 	cd SLALIB_C ; make
