@@ -9,10 +9,11 @@
 *.h5
 *.hdf5
 *.sc_*
-converter/lconvert
-converter/corr2uvfits
-converter/corr2uvfits.dSYM/
-converter/SLALIB_C
+lconverter/lconvert
+lconverter/corr2uvfits
+lconverter/corr2uvfits.dSYM/
+lconverter/SLALIB_C
+lconverter/SLALIB_C
 old/
 .idea/
 .DS_Store
