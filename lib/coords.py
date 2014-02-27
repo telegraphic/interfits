@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+# -*- coding: utf-8 -*-
 # encoding: utf-8
 """
 coords.py
@@ -311,8 +312,7 @@ def convertToJulianTuple(timestamp):
         tt = time.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
         ts = calendar.timegm(tt)
     else:
-        print type(timestamp)
-        raise TypeError
+        raise TypeError("Unknown timestamp type '%s'" % str(type(timestamp)))
         
     # DATE is julian date at midnight that day
     # TIME is in DAYS since midnight
@@ -336,5 +336,4 @@ def parse_timestring(tstring):
         else:
             raise ValueError("Cannot parse %s"%tstring)
     except ValueError:
-        print tstring
-        raise
+        raise ValueError("Unable to parse timestring '%s'" % tstring)

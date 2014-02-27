@@ -19,9 +19,6 @@ from interfits import *
 from lib import dada, coords
 import ledafits_config
 
-# Load globals from config file
-OFFSET_DELTA, INT_TIME, N_INT = ledafits_config.OFFSET_DELTA, ledafits_config.INT_TIME, ledafits_config.N_INT_PER_FILE
-
 class HeaderDataUnit(object):
     """ Very basic object with header and data units """
     def __init__(self, header, data):
@@ -247,10 +244,13 @@ class LedaFits(InterFits):
                     n_ant   = int(d.header["NSTATION"])
 
                     if n_int is None:
-                        n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
+                        file_size_hdr = int(d.header["FILE_SIZE"])
+                        file_size_dsk = os.path.getsize(self.filename)
+                        file_size     = min([file_size_hdr, file_size_dsk])
+                        bpa           = int(d.header["BYTES_PER_AVG"])
+                        n_int = file_size / bpa
                 except ValueError:
-                    print "WARNING: Cannot load NCHAN / NPOL / NSTATION from dada file"
-                    raise
+                    raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
 
                 h2("Generating baseline IDs")
                 bls, ant_arr = coords.generateBaselineIds(n_ant)
@@ -266,9 +266,9 @@ class LedaFits(InterFits):
                 im_vis = np.imag(vis)
                 # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
                 flux = np.zeros([len(bl_lower) * n_int, n_chans * n_stk * 2], dtype='float32')
-                for int_num in range(n_int):
+                for int_num in xrange(n_int):
                     idx = int_num * len(bl_lower)
-                    for ii in range(len(bl_lower)):
+                    for ii in xrange(len(bl_lower)):
                         ant1, ant2 = ant_arr[ii]
                         ant1, ant2 = ant1 - 1, ant2 - 1
 
@@ -324,13 +324,16 @@ class LedaFits(InterFits):
             self.correlator = d.header["INSTRUMENT"]
             self.instrument = d.header["INSTRUMENT"]
             self.telescope  = d.header["TELESCOPE"]
-
-            # Compute time offset
-            h2("Computing UTC offsets")
-            dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+            
+            # Compute the integration time
             tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds
             navg   = int(d.header["NAVG"])           # Number of averages per integration
             int_tim = tsamp * navg                   # Integration time is tsamp * navg
+            self.tInt = int_tim
+            
+            # Compute time offset
+            h2("Computing UTC offsets")
+            dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
 
             byte_offset = int(d.header["OBS_OFFSET"])
             bytes_per_avg = int(d.header["BYTES_PER_AVG"])
@@ -408,9 +411,7 @@ class LedaFits(InterFits):
             x = self.h_array_geometry["ARRAYX"]
             y = self.h_array_geometry["ARRAYY"]
             z = self.h_array_geometry["ARRAYZ"]
-            lat, long, elev = coords.ecef2geo(x, y, z)
-
-            print x, y, z
+            lat, long, elev = coords.ecef2geo(x, y, z)            
 
             self.site      = ephem.Observer()
             self.site.lon  = long * 180 / np.pi
@@ -422,6 +423,102 @@ class LedaFits(InterFits):
         print "Longitude: %s"%self.site.long
         print "Elevation: %s"%self.site.elev
 
+    def inspectFile(self, filename=None, filetype=None):
+        """ Check file type, and load metadata corresponding
+
+        filename (str): name of file. Alternatively, if a psrdada header dictionary
+                        is passed, data will be loaded from shared memory. File type
+                        is inferred from extension (unless filetype arg is also passed).
+        filetype (str): Defaults to none. If passed, treat file as having an explicit
+                        type. Useful for when extension does not match data.
+        """
+        # Check what kind of file to load
+
+        if filetype is not None:
+            self._inspectFile(filetype)
+
+        else:
+            if filename is None:
+                pass
+            elif type(filename) is tuple:
+                # Tuple is header_dict and numpy data array
+                matched = True
+                head, data = filename[0], filename[1]
+                return self.readDada(header_dict=head, data_arr=data, inspectOnly=True)
+            else:
+                file_ext = os.path.splitext(filename)[1][1:]
+                self.filename = filename
+                return self._inspectFile(file_ext)
+
+    def _inspectFile(self, filetype):
+        """ Lookup dictionary (case statement) for file types """
+        return {
+                'dada': self.inspectDada
+        }.get(filetype, self.readError)()
+
+    def inspectDada(self, n_int=None,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+            """ Inspect a LEDA DADA file and return a dictionary describing the file contents.
+            
+            header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
+                                loading data from file, data will be loaded from data_arr
+            data_arr (np.ndarray): data array. This should be a preformatted FLUX data array.
+            """
+
+            h1("Inspecting DADA data")
+            if type(header_dict) is dict:
+                h2("Inspecting from shared memory")
+                d = HeaderDataUnit(header_dict, data_arr)
+                flux = data_arr
+                h2("Generating baseline IDs")
+                bls, ant_arr = self.generateBaselineIds(n_ant)
+                bl_lower = []
+                while len(bl_lower) < len(flux):
+                    bl_lower += bls
+            else:
+                h2("Inspecting visibility data")
+                d   = dada.DadaSubBand(self.filename, n_int, inspectOnly=True)
+                self.dada_header = d.header
+                try:
+                    n_chans = int(d.header["NCHAN"])
+                    n_pol   = int(d.header["NPOL"])
+                    n_ant   = int(d.header["NSTATION"])
+
+                    if n_int is None:
+                        n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
+                except ValueError:
+                    raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
+                    
+            # Gather the metadata
+            metadata = {}
+            
+            ## Basic setup
+            metadata['stokes'] = ['XX', 'YY', 'XY', 'YX']
+            metadata['correlator'] = d.header["INSTRUMENT"]
+            metadata['instrument'] = d.header["INSTRUMENT"]
+            metadata['telescope']  = d.header["TELESCOPE"]
+            
+            ## Integration time
+            metadata['tInt'] = float(d.header['NAVG'])*float(d.header['NFFT'])/float(d.header['FREQ'])/1e6
+            
+            ## Time offset
+            dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+            byte_offset = int(d.header["OBS_OFFSET"])
+            bytes_per_avg = int(d.header["BYTES_PER_AVG"])
+            num_int = byte_offset / bytes_per_avg
+            time_offset = num_int * metadata['tInt']
+            dt_obj = dt_obj + timedelta(seconds=time_offset)
+            date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
+            dd_obs   = dt_obj.strftime("%Y-%m-%d")
+            metadata['tstart'] = float(dt_obj.strftime("%s.%f"))
+
+            ## Frequency information
+            metadata['nchan']   = int(d.header["NCHAN"])
+            metadata['reffreq'] = float(d.header["CFREQ"]) * 1e6
+            metadata['chanbw'] = float(d.header["BW"]) * 1e6 / metadata['nchan']
+
+            # Done
+            return metadata
+            
     def _compute_lst_ha(self, src):
         """ Helper function for computing LST, HA, and RA from timestamp
 
@@ -436,8 +533,6 @@ class LedaFits(InterFits):
         # Find HA and DEC of source
         if src.upper() == 'ZEN':
             H, d     = 0, float(self.site.lat)
-            #print self.site.lat
-            #print float(self.site.lat)
             dec_deg  = np.rad2deg(d)
             ra_deg   = lst_deg
             ha_deg   = 0
@@ -454,12 +549,7 @@ class LedaFits(InterFits):
                 ha_deg = lst_deg - ra_deg
 
             except ValueError:
-                print "Error: Cannot phase to %s"%src
-                print "Choose one of: ZEN, ",
-                for src in src_names:
-                    print "%s, "%src,
-                print "\n"
-                raise
+                raise ValueError("Cannot phase to unknown source '%s'" % src)
 
         return ra_deg, dec_deg, lst_deg, ha_deg
 
@@ -596,7 +686,7 @@ class LedaFits(InterFits):
         dd, tt = [], []
         for ii in range(n_iters):
             jd, jt = coords.convertToJulianTuple(self.date_obs)
-            tdelta = ledafits_config.INT_TIME * ii / 86400.0 # In days
+            tdelta = self.tInt * ii / 86400.0 # In days
             jds = [jd for jj in range(len(ant_arr))]
             jts = [jt + tdelta for jj in range(len(ant_arr))]
             dd.append(jds)
@@ -717,8 +807,8 @@ class LedaFits(InterFits):
         h2("Fixing NOPCAL (setting to zero)")
         self.h_antenna["NOPCAL"] = 0
 
-        h2("Setting INTTIME to %s"%INT_TIME)
-        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * INT_TIME
+        h2("Setting INTTIME to %s" % self.tInt)
+        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * self.tInt
 
     def flag_antenna(self, antenna_id, reason=None, severity=0):
         """ Flag antenna as bad
@@ -782,8 +872,7 @@ class LedaFits(InterFits):
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'
         except AssertionError:
-            print self.d_uv_data["FLUX"].dtype
-            raise
+             raise RuntimeError("Unexpected data type for FLUX: %s" % str(self.d_uv_data["FLUX"].dtype))
         flux  = self.d_uv_data["FLUX"].view('complex64')
 
         bls = set(self.d_uv_data["BASELINE"])
@@ -816,8 +905,6 @@ class LedaFits(InterFits):
         Visibility is VpVq*, so we need to apply
             exp(-i  (phip - phiq))
         to compensate for cable delay
-
-        TODO: Phase values can be precomputed; implement this for speed boost.
         """
 
         h1("Applying cable delays")
@@ -827,8 +914,7 @@ class LedaFits(InterFits):
         try:
             els   = self.z_elength["EL"]
         except:
-            print "ERROR: No cable delay data for telescope %s"%self.telescope
-            raise
+            raise RuntimeError("No cable delay data for telescope '%s'" % self.telescope)
         els   = np.array(els)
         tdelts = els / sol
 
@@ -843,29 +929,37 @@ class LedaFits(InterFits):
         try:
             assert self.d_uv_data["FLUX"].dtype == 'float32'
         except AssertionError:
-            print self.d_uv_data["FLUX"].dtype
-            raise
-
+            raise RuntimeError("Unexpected data type for FLUX: %s" % str(self.d_uv_data["FLUX"].dtype))
+            
+        # Convert the data to complex values
         flux  = self.d_uv_data["FLUX"].view('complex64')
-
+        
+        # Pre-compute the phasing information
         bls, ant_arr = coords.generateBaselineIds(self.n_ant)
         w = 2 * np.pi * freqs # Angular freq
+        delayCorrs = np.zeros((4, len(bls), len(freqs)), dtype=flux.dtype)
+        for ii in range(len(bls)):
+            ant1, ant2 = ant_arr[ii]
+            bl         = bls[ii]
+            td1, td2   = tdelts[ant1-1,:], tdelts[ant2-1,:]
+            
+            # Compute phases for X and Y pol on antennas A and B
+            pxa, pya, pxb, pyb = w * td1[0], w * td1[1], w * td2[0], w * td2[1]
+            
+            # Corrections require negative sign (otherwise reapplying delays)
+            delayCorrs[0,ii,:] = np.exp(1j * (pxa - pxb))	# XX
+            delayCorrs[1,ii,:] = np.exp(1j * (pya - pyb))	# YY
+            delayCorrs[2,ii,:] = np.exp(1j * (pxa - pyb))	# XY
+            delayCorrs[3,ii,:] = np.exp(1j * (pya - pxb))	# YX
+            
         n_int = len(flux) / len(bls)
         for nn in range(n_int):
             for ii in range(len(bls)):
-                ant1, ant2 = ant_arr[ii]
-                bl         = bls[ii]
-                td1, td2   = tdelts[ant1 - 1, :], tdelts[ant2 - 1, :]
-
-                # Compute phases for X and Y pol on antennas A and B
-                tdx1, tdy1, tdx2, tdy2 = td1[0], td1[1], td2[0], td2[1]
-
-                # Corrections require negative sign (otherwise reapplying delays)
-                e_xx = np.exp(-1j * w * (tdx1 - tdx2))
-                e_yy = np.exp(-1j * w * (tdy1 - tdy2))
-                e_xy = np.exp(-1j * w * (tdx1 - tdy2))
-                e_yx = np.exp(-1j * w * (tdy1 - tdx2))
-
+                e_xx = delayCorrs[0,ii,:].flatten()
+                e_yy = delayCorrs[1,ii,:].flatten()
+                e_xy = delayCorrs[2,ii,:].flatten()
+                e_yx = delayCorrs[3,ii,:].flatten()
+                
                 phase_corrs = np.column_stack((e_xx, e_yy, e_xy, e_yx)).flatten()
                 flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
 
