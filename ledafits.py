@@ -524,7 +524,6 @@ class LedaFits(InterFits):
 
         returns (ra_deg, dec_deg, lst_deg, ha_deg)
         """
-
         # First, compute LST
         tt_source = coords.parse_timestring(self.date_obs)
         ts_source = calendar.timegm(tt_source)
@@ -547,33 +546,9 @@ class LedaFits(InterFits):
 
                 # Now we have the RA and DEC, need to convert into hour angle
                 ha_deg = lst_deg - ra_deg
-
             except ValueError:
                 raise ValueError("Cannot phase to unknown source '%s'" % src)
-
         return ra_deg, dec_deg, lst_deg, ha_deg
-
-    def _compute_pointing_vec(self, src):
-        """ Compute the ALT and AZ for a source, then convert into cartesian pointing vector
-        """
-        tt_source = coords.parse_timestring(self.date_obs)
-        ts_source = calendar.timegm(tt_source)
-        dt_utc = datetime.utcfromtimestamp(ts_source)
-
-        ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
-
-        ra_str  = str(ledafits_config.ephem.hours(np.deg2rad(ra_deg)))
-        dec_str = str(ledafits_config.ephem.degrees(np.deg2rad(dec_deg)))
-        site = self.site
-        site.date = dt_utc
-
-        cosDec = np.cos(dec_deg*np.pi/180.0)
-        sinDec = np.sin(dec_deg*np.pi/180.0)
-        cosHA  = np.cos(ha_deg*np.pi/180.0)
-        sinHA  = np.sin(ha_deg*np.pi/180.0)
-        #h2("Telescope is at NM")
-        xyz = np.array([cosDec*cosHA, -cosDec*sinHA, sinDec])
-        return xyz
 
     def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
