@@ -7,14 +7,11 @@ also capable of grouping/combining files that were taken at the same time.
 """
 
 import os
-import re
 import sys
 import numpy
 from datetime import datetime
 
-from ledafits import LedaFits
-
-_annameRE = re.compile('^.*?(?P<id>\d{1,3})$')
+from interfits.ledafits import LedaFits
 
 
 def main(args):
@@ -96,6 +93,15 @@ def main(args):
 		for filename in group[1]:
 			uvws.append( LedaFits(filename) )
 			
+		## Build the output name
+		obsDate = datetime.strptime(uvws[0].date_obs, "%Y-%m-%dT%H:%M:%S")
+		if len(group[1]) > 1:
+			outname = "%s_%s_%s_comb%i.FITS_1" % (uvws[0].instrument, uvws[0].telescope, obsDate.strftime("%Y%m%d%H%M%S"), len(uvws))
+		else:
+			obsFreq = int((uvws[0].formatFreqs()).mean() / 1e6)
+			outname = "%s_%s_%s_%iMHz.FITS_1" % (uvws[0].instrument, uvws[0].telescope, obsDate.strftime("%Y%m%d%H%M%S"), obsFreq)
+		print "  -> group file will be '%s'" % outname
+		
 		## Make a note of lowest frequency value
 		freq_min = numpy.min(uvws[0].formatFreqs())
 		
@@ -119,49 +125,27 @@ def main(args):
 		while len(uvws) > 1:
 			del uvws[-1]
 			
-		## Load in the current antenna mapping to associate antenna IDs with stand names
-		ant_ids = uvws[0].d_array_geometry['NOSTA']
-		ant_nms = [int(_annameRE.match(nm).group('id')) for nm in uvws[0].d_array_geometry['ANNAME']]
+		## Add in the UVW coordinates
+		uvws[0].generateUVW(src='ZEN', use_stored=False, update_src=True)
 		
-		## Figure out which antenna ID each switching outrigger is
-		### Stand numbers for the switching outriggers
-		outriggers = [35, 257, 259]
+		## Apply the cable delays
+		uvws[0].apply_cable_delays()
 		
-		ant_ids_outriggers = []
-		for outrigger in outriggers:
-			ant_ids_outriggers.append( ant_ids[ant_nms.index(outrigger)] )
-			
-		## Extract
-		import pylab
-		pols = uvws[0].stokes_axis
-		freqs = uvws[0].formatFreqs()
-		for stand,ant_id in zip(outriggers, ant_ids_outriggers):
-			print "  -> Extracting data for Stand #%i..." % stand
-			timestamps, data = uvws[0].extractTotalPower(ant_id, timestamps=True)
-			tRel = timestamps - timestamps[0]
-			tRel *= 24*3600	# Timestamps in seconds
-			data = data.real	# Autocorrelations should be real
-			
-			### Plot mean power over time
-			pylab.figure()
-			for i in xrange(data.shape[0]):
-				pylab.plot(tRel, data[i,:,:].mean(axis=-1), linestyle='-', marker='o', label='%i-%s' % (stand, pols[i]))
-			pylab.xlabel('Time [s]')
-			pylab.ylabel('Mean PSD [arb.]')
-			pylab.legend()
-			pylab.draw()
-			
-			### Plot the spectra
-			pylab.figure()
-			for i in xrange(data.shape[0]):
-				pylab.subplot(2, 2, i+1)
-				for j in xrange(data.shape[1]):
-					pylab.plot(freqs/1e6, data[i,j,:])
-				pylab.title("%i-%s" % (stand, pols[i]))
-				pylab.xlabel('Frequency [MHz]')
-				pylab.ylabel('PSD [arb.]')
-			pylab.draw()
-		pylab.show()
+		## Phase to zenith
+		uvws[0].phase_to_src(src='ZEN')
+		
+		## Verify
+		uvws[0].verify()
+		
+		## Save as FITS IDI
+		uvws[0].exportFitsidi(outname)
+		
+		## Cleanup the associated XML file
+		try:
+			xmlname = outname+'.xml'
+			os.unlink(xmlname)
+		except OSError:
+			pass
 
 
 if __name__ == "__main__":

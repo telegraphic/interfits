@@ -76,7 +76,7 @@ except:
     exit()
 
 try:
-    from ledafits import *
+    from interfits.ledafits import *
     InterFits = LedaFits
 except:
     print "Warning: cannot load ledafits. Defaulting to Interfits..."

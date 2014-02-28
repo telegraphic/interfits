@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include VERSION
+include PKG-INFO
+include ez_setup.py
+recursive-include interfits *
+recursive-include tests *
+recursive-include scripts *
+global-exclude *~ *.bak *.pyc *.o *.d
+
