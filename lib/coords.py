@@ -134,7 +134,7 @@ def computeUVW(xyz, H, d, in_seconds=True, conjugate=False):
     if type(xyz) == type(np.array([1])):
         is_list = False
         try:
-            print xyz.shape
+            #print xyz.shape
             x, y, z = np.split(xyz, 3, axis=1)
         except:
             print xyz.shape
