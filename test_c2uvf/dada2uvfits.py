@@ -3,27 +3,29 @@
 """
 dada2uvfits.py
 Convert LEDA-512 OV data in dada format into uvfits format
-created: 08 October 2013
+created: 08 July 2013
+
+lat: 34.070, lng: -107.628, elev: 2133.6 m 
 """
 
 import re, sys, datetime, os, subprocess, shutil
 from optparse import OptionParser
 from colorama import Fore, Back, Style
 
+from datetime import timedelta
 import ephem
 import numpy as np
 
-sys.path.append("/home/leda/dan/interfits")
-import ledafits_config
+from test_main import *
+
 
 # Correlator setup - should not need to change
-SUBBAND_BWIDTH  = 2.616     # Bandwidth in MHz
-SUBBAND_NCHANS  = 109       # Number of channels in each subband
-START_FREQ      = 30        # Start frequency of correlator in MHz
-N_SCANS         = 10        # Number of scans in a dada file
+SUBBAND_BWIDTH  = 14.4     # Bandwidth in MHz
+SUBBAND_NCHANS  = 600       # Number of channels in each subband
+START_FREQ      = 51.6 - 14.4/2 # Start frequency of correlator in MHz
+N_SCANS         = 100        # Number of scans in a dada file
 
-OFFSET_DELTA, INT_TIME, N_INT = ledafits_config.OFFSET_DELTA, ledafits_config.INT_TIME, ledafits_config.N_INT_PER_FILE
-(latitude, longitude, elevation) = (ledafits_config.latitude, ledafits_config.longitude, ledafits_config.elevation)
+(latitude, longitude, elevation) = ('34.07', '-107.628', 2133.6)
 
 def h1(text):
     """ Print text as a fancy header """
@@ -34,6 +36,10 @@ def h1(text):
         line += "-"
     print(Fore.GREEN + line)
     print(Fore.WHITE)
+
+def printRed(text):
+    """ Print something in red """
+    print(Fore.RED + text + Fore.WHITE)
     
 def callSubprocess(args, test=False):
     """ Run a subprocess call with some printing and stuff """
@@ -45,7 +51,7 @@ def callSubprocess(args, test=False):
         subprocess.call(args)
 
 def computeLstFromFilename(filename):
-    """ Print the sidereal times of dada files in a given directory """
+    """ Print the sidereal times of a dada file. Now reads DADA header """
     # Create OVRO observer
     
     ov = ephem.Observer()
@@ -53,14 +59,25 @@ def computeLstFromFilename(filename):
     ov.lat  = latitude
     ov.elev = elevation
 
-    pat = '(\d+)-(\d+)-(\d+)[-_](\d\d)[:h](\d\d)[:m](\d\d)_(\d+).(\d+).(dada)$'
+    d = dada.DadaSubBand(filename, n_int=0)
+    
+    dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")                
+    tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds 
+    navg   = int(d.header["NAVG"])           # Number of averages per integration         
+    int_tim = tsamp * navg                   # Integration time is tsamp * navg           
+                                                                                          
+    byte_offset = int(d.header["OBS_OFFSET"])                                             
+    bytes_per_avg = int(d.header["BYTES_PER_AVG"])                                        
+    num_int = byte_offset / bytes_per_avg                                                 
+    time_offset = num_int * int_tim                                                       
+    
+    pat = '(\d+)-(\d+)-(\d+)[-_](\d\d)[:h](\d\d)[:m](\d\d)$'
 
-    match = re.search(pat, filename)
+    match = re.search(pat, d.header["UTC_START"])
     if match:
         # Convert re match to integers, apart from file extension
-        (y, m, d, hh, mm, ss, offset1, offset2) = [int(m) for m in match.groups()[:-1]]
-        tdiff = offset1 / OFFSET_DELTA * INT_TIME * N_INT
-        dt = datetime.datetime(y,m,d,hh,mm,ss) + datetime.timedelta(seconds=tdiff)
+        #(y, m, d, hh, mm, ss) = [int(m) for m in match.groups()[:-1]]
+        dt = dt_obj + timedelta(seconds=time_offset)
         ov.date = dt
         lst = ov.sidereal_time()
         date_str = "%04d%02d%02d"%(dt.year,dt.month,dt.day)
@@ -70,6 +87,10 @@ def computeLstFromFilename(filename):
         #print lst_str  
         #lst = str(lst).split(":")
         #lst_str  = "%s%s%s"%(lst[0], lst[1], lst[2].split(".")[0])
+        
+        printRed( "UTC START:   %s"%d.header["UTC_START"]         )
+        printRed( "TIME OFFSET: %s"%timedelta(seconds=time_offset))
+        printRed( "NEW START:   (%s, %s)"%(date_str, time_str)    )
         
         return date_str, time_str, lst_str
     else:
@@ -112,9 +133,7 @@ if __name__ == "__main__":
     p.add_option("-z", "--test", dest="test", action='store_true', 
                  help="Turn on test mode (do not run subprocesses)")
     p.add_option("-F", "--field", dest="field_name", type="str", default="Zenith",
-                 help="Name of field. Default is Zenith")
-    p.add_option("-t", "--accperfile", dest="acc_per_file", type="int", default=N_SCANS,
-                 help="Number of accumulations per OUTPUT file.")
+                 help="Name of field")
     p.add_option("-T", "--acctoread", dest="acc_to_read", type="int", default=99999,
                  help="Number of accumulations to read from INPUT file.")
                                   
@@ -131,22 +150,32 @@ if __name__ == "__main__":
     
     h1("Generating headers")
     date_str, time_str, lst_str = computeLstFromFilename(filename_dada)
-    freq_start   = START_FREQ + (options.band_id-1) * SUBBAND_BWIDTH
-    fileroot_out = "%s_b%i_d%s_utc%s"%(options.field_name, options.band_id, date_str, time_str)
+    fileroot_out = "%s_b%s_d%s_utc%s"%(options.field_name, options.band_id, date_str, time_str)
     if not os.path.exists(fileroot_out) and not options.test:
         try:
             os.mkdir(fileroot_out)
         except:
             raise
-
+    
+    # New method: Read from dada header
+    d = dada.DadaSubBand(filename_dada, n_int=0)
+    tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds 
+    navg   = int(d.header["NAVG"])           # Number of averages per integration         
+    int_tim = tsamp * navg                   # Integration time is tsamp * navg
+    byte_offset = int(d.header["FILE_SIZE"])                                             
+    bytes_per_avg = int(d.header["BYTES_PER_AVG"])                                        
+    num_int = byte_offset / bytes_per_avg                                                 
+    time_offset = num_int * int_tim
+    
     header_params = {
         'FIELDNAME'  : options.field_name,
-        'N_CHANS'    : SUBBAND_NCHANS,
-        'N_SCANS'    : options.acc_per_file,
-        'INT_TIME'   : INT_TIME,
-        'FREQCENT'   : freq_start + SUBBAND_BWIDTH / 2,
-        'BANDWIDTH'  : SUBBAND_BWIDTH,
+        'N_CHANS'    : int(d.header["NCHAN"]),
+        'N_SCANS'    : num_int,
+        'INT_TIME'   : int_tim,
+        'FREQCENT'   : float(d.header["CFREQ"]),
+        'BANDWIDTH'  : float(d.header["BW"]),
         'RA_HRS'     : lst_str,
+        'DEC_DEGS'   : latitude,
         'DATE'       : date_str,
         'TIME'       : time_str
     }
@@ -159,7 +188,7 @@ if __name__ == "__main__":
     
     h1("Running lconvert")
         
-    lconvert_args = ['./lconvert', 
+    lconvert_args = ['./lconvert64NM', 
         filename_dada
         ]
     

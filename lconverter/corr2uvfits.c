@@ -21,10 +21,9 @@ $Date: 2011-10-18 22:53:40 +0800 (Tue, 18 Oct 2011) $:    Date of last commit
 
 #define MAX_ANT 513
 #define MAX_LINE 1024
-
-#define LEDA_LAT 37.240391        // Array latitude. degrees North
-#define LEDA_LON -118.28247       // Array longitude. degrees East
-#define LEDA_HGT 1184             // Array altitude. meters above sea level
+#define LEDA_LAT 36.8              // Array latitude. degrees North
+#define LEDA_LON -118.2            // Array longitude. degrees East
+#define LEDA_HGT 1184               // Array altitude. meters above sea level
 #define EARTH_RAD 6378100.0       // meters
 #define SIZ_PRODNAME 8            // size of char array with text type of pol products.
 #define VLIGHT 299792458.0        // speed of light. m/s

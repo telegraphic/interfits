@@ -194,6 +194,46 @@ def computeBaselineVectors(xyz, autocorrs=True):
                     bls_idx += 1
     return bls
 
+def coordTransform(xyz, input='ENU', output='NED'):
+    """ Coordinate frame transformations.
+
+    Understood frames are right-hand-rule based:
+    ENU - East North Up
+    NED - North East Down
+    """
+
+    is_list = True
+    if type(xyz) in (list, tuple):
+        a, b, c = xyz
+    if type(xyz) == type(np.array([1])):
+        is_list = False
+        try:
+            a, b, c = np.split(xyz, 3, axis=1)
+        except:
+            print xyz.shape
+            raise
+
+    if input == 'ENU':
+        x, y, z = a, b, c
+    elif input == 'NED':
+        x, y, z = b, a, -c
+    else:
+        raise CoordinateError("Unknown coordinate system: %s"%input)
+
+    if output == 'ENU':
+        if is_list:
+            return np.array((x, y, z))
+        else:
+            return np.column_stack((x, y, z))
+    elif output == 'NED':
+        if is_list:
+            return np.array((y, x, -z))
+        else:
+            return np.column_stack((y, x, -z))
+    else:
+        raise CoordinateError("Unknown coordinate system: %s"%output)
+
+
 def geo2ecef(lat, lon, elev):
     """
     Convert latitude (rad), longitude (rad), elevation (m) to earth-

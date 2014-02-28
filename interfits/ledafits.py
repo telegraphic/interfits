@@ -326,19 +326,20 @@ class LedaFits(InterFits):
             self.telescope  = d.header["TELESCOPE"]
             
             # Compute the integration time
-            self.tInt = float(d.header['NAVG'])*float(d.header['NFFT'])/float(d.header['FREQ'])/1e6
+            tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds
+            navg   = int(d.header["NAVG"])           # Number of averages per integration
+            int_tim = tsamp * navg                   # Integration time is tsamp * navg
+            self.tInt = int_tim
             
             # Compute time offset
             h2("Computing UTC offsets")
             dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
-            tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds
-            navg   = int(d.header["NAVG"])           # Number of averages per integration
-            int_tim = tsamp * navg                   # Integration time is tsamp * navg
 
             byte_offset = int(d.header["OBS_OFFSET"])
             bytes_per_avg = int(d.header["BYTES_PER_AVG"])
-            num_int = byte_offset / bytes_per_avg
-            time_offset = num_int * int_tim
+            num_int_since_obs_start = byte_offset / bytes_per_avg
+            time_offset = num_int_since_obs_start * int_tim
+
             dt_obj = dt_obj + timedelta(seconds=time_offset)
             date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
             dd_obs   = dt_obj.strftime("%Y-%m-%d")
@@ -396,7 +397,7 @@ class LedaFits(InterFits):
         Note: this overrides the Interfits method, adding checks for LEDA telescopes,
         and preferentially loads those data.
         """
-        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDA512', 'LEDA-OVRO'):
+        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDAOVRO', 'LEDA512', 'LEDA-OVRO'):
             h3("Data appears to be from LWAOVRO")
             self.site             = ledafits_config.ovro
             self.z_elength        = load_json(ledafits_config.json_antenna_el_lens)
@@ -410,12 +411,12 @@ class LedaFits(InterFits):
             x = self.h_array_geometry["ARRAYX"]
             y = self.h_array_geometry["ARRAYY"]
             z = self.h_array_geometry["ARRAYZ"]
-            lat, long, elev = coords.ecef2geo(x, y, z)
-            
-            site      = ephem.Observer()
-            site.lon  = long * 180 / np.pi
-            site.lat  = lat * 180 / np.pi
-            site.elev = elev
+            lat, long, elev = coords.ecef2geo(x, y, z)            
+
+            self.site      = ephem.Observer()
+            self.site.lon  = long * 180 / np.pi
+            self.site.lat  = lat * 180 / np.pi
+            self.site.elev = elev
 
         print "Telescope: %s"%self.telescope
         print "Latitude:  %s"%self.site.lat
@@ -523,7 +524,6 @@ class LedaFits(InterFits):
 
         returns (ra_deg, dec_deg, lst_deg, ha_deg)
         """
-
         # First, compute LST
         tt_source = coords.parse_timestring(self.date_obs)
         ts_source = calendar.timegm(tt_source)
@@ -546,33 +546,9 @@ class LedaFits(InterFits):
 
                 # Now we have the RA and DEC, need to convert into hour angle
                 ha_deg = lst_deg - ra_deg
-
             except ValueError:
                 raise ValueError("Cannot phase to unknown source '%s'" % src)
-
         return ra_deg, dec_deg, lst_deg, ha_deg
-
-    def _compute_pointing_vec(self, src):
-        """ Compute the ALT and AZ for a source, then convert into cartesian pointing vector
-        """
-        tt_source = coords.parse_timestring(self.date_obs)
-        ts_source = calendar.timegm(tt_source)
-        dt_utc = datetime.utcfromtimestamp(ts_source)
-
-        ra_deg, dec_deg, lst_deg, ha_deg = self._compute_lst_ha(src)
-
-        ra_str  = str(ledafits_config.ephem.hours(np.deg2rad(ra_deg)))
-        dec_str = str(ledafits_config.ephem.degrees(np.deg2rad(dec_deg)))
-        site = self.site
-        site.date = dt_utc
-
-        cosDec = np.cos(dec_deg*np.pi/180.0)
-        sinDec = np.sin(dec_deg*np.pi/180.0)
-        cosHA  = np.cos(ha_deg*np.pi/180.0)
-        sinHA  = np.sin(ha_deg*np.pi/180.0)
-        #h2("Telescope is at NM")
-        xyz = np.array([cosDec*cosHA, -cosDec*sinHA, sinDec])
-        return xyz
 
     def setDefaultsLeda(self, n_uv_rows=None):
         """ set LEDA specific default values """
@@ -590,7 +566,7 @@ class LedaFits(InterFits):
         """ Loads ANTENNA and ARRAY_GEOMETRY tables as set in leda_config """
         h1("Loading ANTENNA and ARRAY_GEOMETRY from JSON")
 
-        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDA512', 'LEDA-OVRO'):
+        if self.telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDAOVRO', 'LEDA512', 'LEDA-OVRO'):
             h3("Data appears to be from LWAOVRO")
             
             self.site             = ledafits_config.ovro
@@ -889,9 +865,7 @@ class LedaFits(InterFits):
                 #    tg *= -1    # Compensate for geometry
                 p = np.exp(-1j * w * tg) # Needs to be -ve as compensating delay
                 phase_corrs = np.column_stack((p, p, p, p)).flatten()
-
                 flux[nn*len(bls) + ii] = flux[nn*len(bls) + ii] * phase_corrs
-
 
             # Now we have applied geometric delays, we need to
             # convert from viewing as complex to viewing as floats
@@ -967,44 +941,3 @@ class LedaFits(InterFits):
 
         assert flux.dtype == 'complex64'
         self.d_uv_data["FLUX"] = flux.view('float32')
-
-
-    def extractTotalPower(self, antenna_id, timestamps=False):
-        """ Extract autocorrelation of a give antenna
-
-        Parameters
-        ----------
-        antenna_id: int
-            ID of antenna to extract
-        timestamps: bool
-            Default False. Returns (timestamps, data) tuple if true,
-            else returns only data
-
-        Returns
-        -------
-        Returns array with dimensions (n_stokes, n_int, n_channel)
-        if timestamps arg is set to True, returns (timestamps, data)
-        """
-
-        bls   = self.d_uv_data["BASELINE"]
-        bl_id = antenna_id * 256 + antenna_id
-
-        try:
-            stokes = self.stokes
-        except AttributeError:
-            self.stokes = self.formatStokes()
-            stokes = self.stokes
-
-        data = stokes[:, bls == bl_id]
-        if timestamps is False:
-            return data
-        else:
-            ts = self.d_uv_data["TIME"]
-            ts = ts[bls == bl_id]
-            return ts, data
-
-
-
-
-
-
