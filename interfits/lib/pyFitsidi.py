@@ -1,4 +1,5 @@
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 pyFitsidi.py
 =============
@@ -48,6 +49,12 @@ import sys, os
 import pyfits as pf, numpy as np
 from lxml import etree
 import lxml
+
+__version__ = '0.0'
+__all__ = ['checkConfigType', 'parseConfig', 'make_primary', 'make_array_geometry', 'make_antenna', 
+           'make_frequency', 'make_source', 'make_uv_data', 'make_interferometer_model', 'make_system_temperature', 
+           'make_gain_curve', 'make_phase_cal', 'make_flag', 'make_bandpass', 'make_weather', 'make_baseline', 
+           'make_calibration', 'make_model_comps', '__version__', '__all__']
 
 
 def checkConfigType(config):

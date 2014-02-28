@@ -1,7 +1,18 @@
 # -*- coding: utf-8 -*-
+
+"""
+dada.py
+=======
+
+Module for reading in data in the Dada format.
+"""
+
 import numpy as np
 import glob
 import os
+
+__version__ = '0.0'
+__all__ = ['DadaFullBand', 'DadaSubBand', 'lookup_warn', '__version__', '__all__']
 
 
 def lookup_warn(table, key, default=None):

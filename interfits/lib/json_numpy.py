@@ -1,5 +1,5 @@
-#! /usr/bin/env python
-# encoding: utf-8
+# -*- coding: utf-8 -*-
+
 """
 json_numpy.py
 =============
@@ -16,6 +16,10 @@ except ImportError:
     USES_UJSON = False
 
 import numpy as np
+
+__version__ = '0.0'
+__all__ ['sanitize_json', 'dump_json', 'load_json', '__version__', '__all__']
+
 
 def sanitize_json(npDict):
         """ Converts a dictionary of numpy arrays into a dictionary of lists """
