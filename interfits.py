@@ -1217,7 +1217,7 @@ class InterFits(object):
                 bl_min, bl_max = (2048 * ref_ant, 2048 * ref_ant + self.n_ant + 65536)
             for b in range(bl_min, bl_max + 1): bl_ids.append(b)
 
-            return bl_ids
+            return set(bl_ids)
         else:
             print "Lower triangle not supported yet"
             raise

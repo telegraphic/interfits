@@ -99,6 +99,7 @@ def compare_test_files(filename1, filename2):
             pow_uvf   = np.sqrt(flux_uvf[:, 2*ii::8]**2 + flux_uvf[:, 2*ii+1::8]**2)
             assert np.allclose(pow_idi, pow_uvf, rtol=0.1)
             print "PASS %s of 4: Bandpass magnitude matches"%(ii + 1)
+
         except:
             #plt.plot(pow_idi[0])
             #plt.plot(pow_uvf[0])
@@ -106,6 +107,22 @@ def compare_test_files(filename1, filename2):
             #plt.show()
             #raise
             printRed("FAIL %s of 4: Bandpass magnitude DOES NOT MATCH"%(ii + 1))
+            if ii == 3:
+                print "    NOTE: corr2uvfits does not write YX* for autocorrelations"
+                print "    NOTE: Testing cross-correlations only"
+                try:
+                    for jj in range(flux_uvf.shape[0]):
+                        bl_id     = l_idi.d_uv_data["BASELINE"]
+                        num_ok = 0
+                        if bl_id[jj] % 256 != bl_id[jj] / 256:
+                            pow_idi   = np.sqrt(flux_idi[jj, 6::8]**2 + flux_idi[jj, 7::8]**2)
+                            pow_uvf   = np.sqrt(flux_uvf[jj, 6::8]**2 + flux_uvf[jj, 7::8]**2)
+                            assert np.allclose(pow_idi, pow_uvf, rtol=0.1)
+                    print "PASS 4 of 4: Cross correlations bandpass magnitude match"
+                except AssertionError:
+                    printRed("FAIL 4 of 4: Bandpass magnitude DOES NOT MATCH for cross-correlations"%(ii + 1))
+
+
         
     test_compare_headers(l_idi, l_uvf)
 

@@ -16,69 +16,20 @@ def lookup_warn(table, key, default=None):
             print "#Warning: No key '%s'" % key
             return None
 
+class DadaReader(object):
+    """ Dada file reader for raw LEDA correlator data.
 
-class DadaFullBand(object):
-    """
-    # Wraps a collection of sub-bands comprising a complete correlator dump
-    # Note: Assumes sub-bands span contiguous range of frequencies (in any order)
-    """
+    Reads the header of a dada file and converts data into
+    an ndimensional visibility matrix.
 
-    def __init__(self):
-        self.subbands = []
-
-    def open(self, datestamps, header_sizes=None, extensions=None, inspectOnly=False):
-        # Allow parameters to be singular values or lists
-        if isinstance(datestamps, basestring):
-            datestamps = [datestamps]
-        if isinstance(header_sizes, int):
-            header_sizes = [header_sizes]
-        if isinstance(extensions, basestring):
-            extensions = [extensions]
-        if header_sizes is None:
-            header_sizes = [None] * len(datestamps)
-        if extensions is None:
-            extensions = [None] * len(datestamps)
-        self.subbands = []
-        for datestamp, header_size, extension \
-            in zip(datestamps, header_sizes, extensions):
-            subband = DadaSubBand()
-            subband.open(datestamp, header_size, extension)
-            self.subbands.append(subband)
-            self.subbands.sort(key=lambda a: a.center_freq)
-
-        self.nchan = sum([sb.nchan for sb in self.subbands])
-        # Note: Assumes all subbands have matching params
-        self.nbit = self.subbands[0].nbit
-        self.ndim = self.subbands[0].ndim
-        self.npol = self.subbands[0].npol
-        self.nstation = self.subbands[0].nstation
-        self.ninput = self.subbands[0].ninput
-        self.navg = self.subbands[0].navg
-        self.center_freq = sum([sb.center_freq for sb in self.subbands]) \
-                           / float(len(self.subbands))
-
-    def read(self, first_int, nint=1):
-        if len(self.subbands) == 0:
-            return None
-        subbands = [sb.read(first_int, nint) for sb in self.subbands]
-        if any([sb is None for sb in subbands]):
-            return None
-        fullmatrix = np.concatenate(subbands, axis=1)
-        return fullmatrix
-
-    def read_last(self):
-        if len(self.subbands) == 0:
-            return None
-        subbands = [sb.read_last() for sb in self.subbands]
-        if any([sb is None for sb in subbands]):
-            return None
-        fullmatrix = np.concatenate(subbands, axis=1)
-        return fullmatrix
-
-
-class DadaSubBand(object):
-    """
-    Represents on sub-band of a correlator dump
+    Parameters
+    ----------
+    filename: str
+        name of dada file to open
+    n_int: int
+        number of integrations to read. If None, will only read header
+    inspectOnly: bool
+        If inspectOnly, will only read header and will not unpack data.
     """
     DEFAULT_HEADER_SIZE = 4096
 
@@ -103,6 +54,7 @@ class DadaSubBand(object):
        return str(self.header)
 
     def read_header(self, header_size=None, extension=None):
+        """ Read dada file header """
         if header_size is None:
             header_size = self.DEFAULT_HEADER_SIZE
         if extension is None:
@@ -120,6 +72,7 @@ class DadaSubBand(object):
         f.close()
 
     def parse_header(self, headerstr):
+        """ Parse dada header and form useful quantities """
         header = {}
         for line in headerstr.split('\n'):
             try:
@@ -130,11 +83,37 @@ class DadaSubBand(object):
             value = value.strip()
             header[key] = value
         self.header = header
-        self.center_freq = float(lookup_warn(header, 'CFREQ', 0.))
-        self.bandwidth = float(lookup_warn(header, 'BW', 1.))
-        self.nchan = int(header['NCHAN'])
-        self.npol = int(header['NPOL'])
-        
+
+        #
+        self.c_freq_mhz     = float(lookup_warn(header, 'CFREQ', 0.))
+        self.bandwidth_mhz  = float(lookup_warn(header, 'BW', 1.))
+        self.chan_bw_hz     = float(header["CHAN_BW"])
+        self.chan_bw_mhz    = float(header["CHAN_BW"]) / 1e6
+        self.n_chans = int(header["NCHAN"])
+        self.n_pol   = int(header["NPOL"])
+        self.n_ant   = int(header["NSTATION"])
+
+        # Calculate number of integrations within this file
+        # File may not be complete, hence file_size_dsk is read too
+        file_size_hdr = int(header["FILE_SIZE"])
+        file_size_dsk = os.path.getsize(self.filename)
+        file_size     = min([file_size_hdr, file_size_dsk])
+        bpa           = int(header["BYTES_PER_AVG"])
+        self.n_int = file_size / bpa
+
+        # Calculate integration time per accumulation
+        tsamp      = float(header["TSAMP"]) * 1e-6   # Sampling time per channel, in microseconds
+        navg       = int(header["NAVG"])             # Number of averages per integration
+        int_tim    = tsamp * navg                    # Integration time is tsamp * navg
+        self.t_int = int_tim
+
+        # Calculate the time offset since the observation started
+        byte_offset = int(d.header["OBS_OFFSET"])
+        bytes_per_avg = int(d.header["BYTES_PER_AVG"])
+        num_int_since_obs_start = byte_offset / bytes_per_avg
+        time_offset_since_obs_start = num_int_since_obs_start * int_tim
+        self.t_offset = time_offset_since_obs_start
+
         try:
             self.nstation = int(header['NSTAND'])
         except KeyError:
