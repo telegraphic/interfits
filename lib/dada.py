@@ -3,6 +3,7 @@ import numpy as np
 import glob
 import os
 
+from lib.timeit import timeit
 
 def lookup_warn(table, key, default=None):
     try:
@@ -46,9 +47,11 @@ class DadaReader(object):
                 bpa           = int(self.header["BYTES_PER_AVG"])
                 
                 n_int = file_size / bpa
-                
+
+            self.compute_matrix_indexes()
             self.read_data(0, n_int=n_int)
             self.datestamp = self.header['UTC_START']
+
             
     def __repr__(self):
        return str(self.header)
@@ -71,6 +74,7 @@ class DadaReader(object):
         self.bytes_per_file = f.tell() - self.header_size
         f.close()
 
+    #@timeit
     def parse_header(self, headerstr):
         """ Parse dada header and form useful quantities """
         header = {}
@@ -84,11 +88,10 @@ class DadaReader(object):
             header[key] = value
         self.header = header
 
-        #
+        # Lod commonly used values into variables
         self.c_freq_mhz     = float(lookup_warn(header, 'CFREQ', 0.))
         self.bandwidth_mhz  = float(lookup_warn(header, 'BW', 1.))
-        self.chan_bw_hz     = float(header["CHAN_BW"])
-        self.chan_bw_mhz    = float(header["CHAN_BW"]) / 1e6
+        self.chan_bw_mhz    = float(header["CHAN_WIDTH"])
         self.n_chans = int(header["NCHAN"])
         self.n_pol   = int(header["NPOL"])
         self.n_ant   = int(header["NSTATION"])
@@ -108,29 +111,32 @@ class DadaReader(object):
         self.t_int = int_tim
 
         # Calculate the time offset since the observation started
-        byte_offset = int(d.header["OBS_OFFSET"])
-        bytes_per_avg = int(d.header["BYTES_PER_AVG"])
+        byte_offset = int(header["OBS_OFFSET"])
+        bytes_per_avg = int(header["BYTES_PER_AVG"])
         num_int_since_obs_start = byte_offset / bytes_per_avg
         time_offset_since_obs_start = num_int_since_obs_start * int_tim
         self.t_offset = time_offset_since_obs_start
 
         try:
-            self.nstation = int(header['NSTAND'])
+            self.n_station = int(header['NSTAND'])
         except KeyError:
-            self.nstation = int(lookup_warn(header, 'NSTATION', 32))
-        self.ninput = self.nstation * self.npol
-        self.ndim = int(header['NDIM'])
-        self.nbit = int(header['NBIT'])
+            self.n_station = int(lookup_warn(header, 'NSTATION', 32))
+        self.n_input = self.n_station * self.n_pol
+        self.n_dim = int(header['NDIM'])
+        self.n_bit = int(header['NBIT'])
         self.dtype = \
-            np.float32 if self.nbit == 32 else \
-                np.int16 if self.nbit == 16 else \
-                    np.int8 if self.nbit == 8 else \
+            np.float32 if self.n_bit == 32 else \
+                np.int16 if self.n_bit == 16 else \
+                    np.int8 if self.n_bit == 8 else \
                         None
         self.navg = int(lookup_warn(header, 'NAVG', 25 * 8192))
         self.bytes_per_avg = int(lookup_warn(header, 'BYTES_PER_AVG', 10444800))
         self.data_order = lookup_warn(header, 'DATA_ORDER',
                                       'REG_TILE_TRIANGULAR_2x2')
-        # TODO: Refactor this into a separate function
+
+    #@timeit
+    def compute_matrix_indexes(self):
+        """ Compute the matrix indexes """
         if self.data_order == 'REG_TILE_TRIANGULAR_2x2':
             reg_rows = 2
             reg_cols = 2
@@ -145,67 +151,107 @@ class DadaReader(object):
         else:
             raise KeyError("Unsupported data order '%s'" % self.data_order)
 
+    #@timeit
     def read_data(self, first_int, n_int=1):
         """
         Returns the specified integrations as a numpy array with shape:
         (nint, nchans, nstation, nstation, npol, npol), dtype=complex64
+
+        Parameters
+        ----------
+        first_int: int
+            Number of integrations to skip from start of file (i.e. offset)
+        n_int: int
+            Number of integrations to read
         """
         byte_offset = first_int * self.bytes_per_avg
         nbytes = n_int * self.bytes_per_avg
-        #nelements = nbytes / (self.nbit / 8)
 
         file_idx = byte_offset // self.bytes_per_file
         file_offset = byte_offset % self.bytes_per_file
         file_byte_label = file_idx * self.bytes_per_file
         filename = self.filename
 
-        print "#Reading", filename
+        print "#Reading   ", filename
         f = open(filename, 'rb')
         f.seek(self.header_size + file_offset)
         # Note: We load as raw bytes to allow arbitrary file boundaries
         data = np.fromfile(f, dtype=np.uint8, count=nbytes)
-        #data = np.fromfile(f, dtype=self.dtype, count=nelements)
         f.close()
-        return self.transform_raw_data(data, n_int)
 
-    def transform_raw_data(self, data, nint):
-        # Transform raw correlator data into a sensible format
-        # TODO: This may break if system endianness is different
+        # Transform data into a visibilty matrix
+        data = self.transform_raw_data(data, n_int)
+        return data
+
+    #@timeit
+    def transform_raw_data(self, data, n_int, fill_conjugate=False):
+        """ Transform dada data into a useful visibility matrix
+
+        Parameters
+        ----------
+        data: np.ndarray
+            data array to transform into a visibility matrix
+        n_int:
+            number of integrations in data array
+        fill_conjugate: bool
+            Default False. Will compute upper half (conjugate) of full visibilty
+            matrix if set to True.
+
+        Notes
+        -----
+        This function dominates data processing time. Unless you need a full visibility
+        matrix, do not run this with fill_conjugate=True, as this approximately doubles
+        the amount of processing time.
+
+        TODO: This may break if system endianness is different
+        TODO: Add support for outputting in upper/lower triangular format
+        """
+        #print "#Converting", self.filename
+
         data = data.view(dtype=self.dtype).astype(np.float32)
         # Note: The real and imag components are stored separately
-        data = data.reshape((nint, 2, self.nchan, self.matlen))
-        data = data[..., 0, :, :] + np.complex64(1j) * data[..., 1, :, :]
-        # TODO: Add support for outputting in upper/lower triangular format
+        data = data.reshape((n_int, 2, self.n_chans, self.matlen))
+
         # Scatter values into new full matrix
-        fullmatrix = np.zeros((nint, self.nchan,
-                               self.ninput, self.ninput),
+        fullmatrix = np.zeros((n_int, self.n_chans, self.n_input, self.n_input),
                               dtype=np.complex64)
-        fullmatrix[..., self.matrows, self.matcols] = data
-        # Fill out the other (conjugate) triangle
-        tri_inds = np.arange(self.ninput * (self.ninput + 1) / 2, dtype=np.uint32)
-        rows, cols = self.triangular_coords(tri_inds)
-        fullmatrix[..., cols, rows] = np.conj(fullmatrix[..., rows, cols])
+
+        if not fill_conjugate:
+            # Note cols then rows and conjugation (-1j) -- this is required
+            data = data[..., 0, :, :] + np.complex64(-1j) * data[..., 1, :, :]
+            fullmatrix[..., self.matcols, self.matrows] = data
+        else:
+            # Fill out the other (conjugate) triangle
+            # Note rows then cols and no conjugation -- in contrast to above
+            data = data[..., 0, :, :] + np.complex64(1j) * data[..., 1, :, :]
+            fullmatrix[..., self.matrows, self.matcols] = data
+            tri_inds = np.arange(self.n_input * (self.n_input + 1) / 2, dtype=np.uint32)
+            rows, cols = self.triangular_coords(tri_inds)
+            fullmatrix[..., cols, rows] = np.conj(fullmatrix[..., rows, cols])
 
         # Reorder so that pol products change fastest
-        fullmatrix = fullmatrix.reshape(nint, self.nchan,
-                                        self.nstation, self.npol,
-                                        self.nstation, self.npol)
+        fullmatrix = fullmatrix.reshape(n_int, self.n_chans,
+                                        self.n_station, self.n_pol,
+                                        self.n_station, self.n_pol)
         fullmatrix = fullmatrix.transpose([0, 2, 4, 1, 3, 5])
-
         self.data = fullmatrix
 
+
     def triangular_coords(self, matrix_idx):
+        """ Generate triangular coordinates. Returns row, col for each matrix index """
         row = (-0.5 + np.sqrt(0.25 + 2 * matrix_idx)).astype(np.uint32)
         col = matrix_idx - row * (row + 1) / 2
         return row, col
 
     def reg_tile_triangular_matlen(self, reg_rows, reg_cols):
-        return (self.nstation / reg_rows + 1) * \
-               (self.nstation / reg_cols / 2) * self.npol ** 2 * reg_rows * reg_cols
+        """ Compute the matrix length of regular tile triangle data """
+        return (self.n_station / reg_rows + 1) * \
+               (self.n_station / reg_cols / 2) * self.n_pol ** 2 * reg_rows * reg_cols
 
     def reg_tile_triangular_coords(self, matrix_idx, reg_rows, reg_cols):
-        npol = self.npol
-        reg_tile_nbaseline = (self.nstation / reg_rows + 1) * (self.nstation / reg_cols / 2)
+        """ Compute row, col for a given matrix index, with given register tile sizes """
+        npol = self.n_pol
+        reg_tile_nbaseline = (self.n_station / reg_rows + 1) * (self.n_station / reg_cols / 2)
         rem = matrix_idx
         reg_col = rem / (reg_rows * reg_tile_nbaseline * npol * npol)
         rem %= (reg_rows * reg_tile_nbaseline * npol * npol)

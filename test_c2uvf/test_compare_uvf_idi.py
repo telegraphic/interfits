@@ -20,29 +20,26 @@ import pylab as plt
 from test_main import *
 from dada2uvfits import callSubprocess, h1, printRed
 
-def create_test_files():
+def create_test_files(idi=True, uvfits=True):
     """ Run corr2uvfits and LedaFits on the same data 
     
     This produces a test.fitsidi, and a test.uvfits file
     """
     dada_filename = '2014-02-22-23h00m11_0000455393280000.000000.dada'
-    
-    # Create fitsidi test file
+
     t1 = time.time()
-    l = LedaFits(dada_filename)
-    l.exportFitsidi('data/test.fitsidi')
+    if idi:
+        # Create fitsidi test file
+        l = LedaFits(dada_filename)
+        l.exportFitsidi('data/test.fitsidi')
     t2 = time.time()
-    
-    # Create UVFITS file
-    callSubprocess(['./dada2uvfits.py', dada_filename, '-l'])
-    
-    # Remove intermediate files
-    callSubprocess(['mv', 'Zenith_b1_d20140223_utc110651/Zenith_b1_d20140223_utc110651.uvfits', 'data/test.uvfits'])
-    callSubprocess(['rm', '-rf', 'Zenith_b1_d20140223_utc110651'])
-    #callSubprocess(['rm', '2014-02-22-23h00m11_0000455393280000.000000.dada_1.LA'])
-    #callSubprocess(['rm', '2014-02-22-23h00m11_0000455393280000.000000.dada_1.LC'])
-    #callSubprocess(['rm', '2014-02-22-23h00m11_0000455393280000.000000.dada_2.LA'])
-    #callSubprocess(['rm', '2014-02-22-23h00m11_0000455393280000.000000.dada_2.LC'])
+
+    if uvfits:
+        # Create UVFITS file
+        callSubprocess(['./dada2uvfits.py', dada_filename, '-l'])
+        # Remove intermediate files
+        callSubprocess(['mv', 'Zenith_b1_d20140223_utc110651/Zenith_b1_d20140223_utc110651.uvfits', 'data/test.uvfits'])
+        callSubprocess(['rm', '-rf', 'Zenith_b1_d20140223_utc110651'])
     t3 = time.time()  
     
     print "INTERFITS: %2.3fs"%(t2-t1)
@@ -160,12 +157,12 @@ def test_compare_headers(uvf, lalc):
         
 if __name__ == '__main__':
     
-    do_create_test_files  = False
+    do_create_test_files  = True
     do_clip_test_files    = False
     do_compare_test_files = True
     
     if do_create_test_files:
-        create_test_files()
+        create_test_files(uvfits=False)
     if do_clip_test_files:
         clip_test_files()
     if do_compare_test_files:

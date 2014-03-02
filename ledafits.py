@@ -349,11 +349,11 @@ class LedaFits(InterFits):
             self.h_params["NCHAN"]    = d.n_chans
             self.h_common["NO_CHAN"]  = d.n_chans
             self.h_common["REF_FREQ"] = d.c_freq_mhz * 1e6
-            self.h_common["CHAN_BW"]  = d.bandwidth_mhz * 1e6 / d.n_chans
+            self.h_common["CHAN_BW"]  = d.chan_bw_mhz * 1e6
             self.h_common["REF_PIXL"] = d.n_chans / 2 + 1
             self.h_common["RDATE"]    = dd_obs  # Ignore time component
 
-            self.d_frequency["CH_WIDTH"]  = d.chan_bw_hz
+            self.d_frequency["CH_WIDTH"]  = d.chan_bw_mhz * 1e6
             self.d_frequency["TOTAL_BANDWIDTH"] = d.bandwidth_mhz * 1e6
             self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
             self.stokes_vals = [-5, -6, -7, -8]
@@ -974,7 +974,7 @@ class LedaFits(InterFits):
 
             # Find all affected baselines
             bl_old  = self.search_baselines(ant_old)
-            bl_new = self.search_baselines(ant_new)
+            bl_new  = self.search_baselines(ant_new)
 
             # We want to replace data in given with actual
             for bl in bl_old:
