@@ -18,7 +18,7 @@ except ImportError:
 import numpy as np
 
 __version__ = '0.0'
-__all__ ['sanitize_json', 'dump_json', 'load_json', '__version__', '__all__']
+__all__ = ['sanitize_json', 'dump_json', 'load_json', '__version__', '__all__']
 
 
 def sanitize_json(npDict):
