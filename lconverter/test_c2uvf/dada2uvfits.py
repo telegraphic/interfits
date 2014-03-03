@@ -59,7 +59,7 @@ def computeLstFromFilename(filename):
     ov.lat  = latitude
     ov.elev = elevation
 
-    d = dada.DadaSubBand(filename, n_int=0)
+    d = dada.DadaReader(filename, n_int=0)
     
     dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")                
     tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds 
@@ -158,7 +158,7 @@ if __name__ == "__main__":
             raise
     
     # New method: Read from dada header
-    d = dada.DadaSubBand(filename_dada, n_int=0)
+    d = dada.DadaReader(filename_dada, n_int=0)
     tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds 
     navg   = int(d.header["NAVG"])           # Number of averages per integration         
     int_tim = tsamp * navg                   # Integration time is tsamp * navg
