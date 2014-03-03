@@ -30,8 +30,8 @@ def main(args):
 	groups = []
 	for filename,metadata in metadataList:
 		tStart = metadata['tstart']
-		freqStart = metadata['reffreq'] + 0.0
-		freqStop  = metadata['reffreq'] + metadata['nchan']*metadata['chanbw']
+		freqStart = metadata['reffreq'] + (1                 - metadata['refpixel'])*metadata['chanbw']
+		freqStop  = metadata['reffreq'] + (metadata['nchan'] - metadata['refpixel'])*metadata['chanbw']
 		
 		## See if this file represents the start of a new group or not
 		new = True

@@ -13,9 +13,15 @@ import calendar
 from datetime import datetime, timedelta
 import ephem
 import re
+import os
+from lxml import etree
+import numpy as np
+import pyfits as pf
+from lib.json_numpy import *
 
 from interfits import *
 from lib import dada, coords
+from lib.pyFitsidi import *
 import ledafits_config
 
 __version__ = '0.0'
@@ -41,7 +47,7 @@ class LedaFits(InterFits):
         filename (str): name of file. Alternatively, if a psrdada header dictionary
                         is passed, data will be loaded from shared memory. File type
                         is inferred from extension (unless filetype arg is also passed).
-        filetype (str): Defaults to none. If passed, treat file as having an explicit
+        filetype (str): ffaults to none. If passed, treat file as having an explicit
                         type. Useful for when extension does not match data.
         """
         # Check what kind of file to load
@@ -517,6 +523,7 @@ class LedaFits(InterFits):
             ## Frequency information
             metadata['nchan']   = int(d.header["NCHAN"])
             metadata['reffreq'] = float(d.header["CFREQ"]) * 1e6
+            metadata['refpixel'] = int(d.header["NCHAN"]) / 2
             metadata['chanbw'] = float(d.header["BW"]) * 1e6 / metadata['nchan']
 
             # Done
@@ -944,3 +951,37 @@ class LedaFits(InterFits):
 
         assert flux.dtype == 'complex64'
         self.d_uv_data["FLUX"] = flux.view('float32')
+        
+    def extractTotalPower(self, antenna_id, timestamps=False):
+         """ Extract autocorrelation of a give antenna
+  
+         Parameters
+         ----------
+         antenna_id: int
+             ID of antenna to extract
+         timestamps: bool
+             Default False. Returns (timestamps, data) tuple if true,
+             else returns only data
+  
+         Returns
+         -------
+         Returns array with dimensions (n_stokes, n_int, n_channel)
+         if timestamps arg is set to True, returns (timestamps, data)
+         """
+         
+         bls   = self.d_uv_data["BASELINE"]
+         bl_id = antenna_id * 256 + antenna_id
+         
+         try:
+             stokes = self.stokes
+         except AttributeError:
+             self.stokes = self.formatStokes()
+             stokes = self.stokes
+             
+         data = stokes[:, bls == bl_id]
+         if timestamps is False:
+             return data
+         else:
+             ts = self.d_uv_data["TIME"]
+             ts = ts[bls == bl_id]
+             return ts, data

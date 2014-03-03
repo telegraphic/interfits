@@ -22,6 +22,8 @@ def main(args):
 	for filename in filenames:
 		uvw = LedaFits()
 		metadataList.append( (filename, uvw.inspectFile(filename)) )
+		freqStart = metadata['reffreq'] + (1                 - metadata['refpixel'])*metadata['chanbw']
+		freqStop  = metadata['reffreq'] + (metadata['nchan'] - metadata['refpixel'])*metadata['chanbw']
 		
 	# Group the files by start time and save the filenames and frequency ranges
 	groups = []
