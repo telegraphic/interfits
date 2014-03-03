@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -11,15 +12,6 @@ the LEDA project.
 import os
 import ephem
 
-__version__ = '0.0'
-__all__ = ['SPEED_OF_LIGHT', 'OFFSET_DELTA', 'INT_TIME', 'N_INT_PER_FILE', 
-           'CH_WIDTH', 'SUB_BW', 'TELESCOP', 'ARRNAM', 
-           'ovro', 'json_h_array_geometry', 'json_d_array_geometry', 'json_h_antenna', 'json_d_antenna', 'json_antenna_el_lens', 
-           'lwa1', 'json_h_array_geometry_nm', 'json_d_array_geometry_nm', 'json_h_antenna_nm', 'json_d_antenna_nm', 'json_antenna_el_lens_nm', 
-           'src_names', 'src_ras', 'src_decs', '__version__', '__all__']
-
-
-# Speed of light in m/s
 SPEED_OF_LIGHT = 299792458
 
 ########
