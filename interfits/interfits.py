@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -23,6 +22,9 @@ import ephem
 from lib.pyFitsidi import *
 from lib.json_numpy import *
 from lib import coords
+
+__version__ = '0.0'
+__all__ = ['LinePrint', 'h1', 'h2', 'h3', 'InterFits', '__version__', '__all__']
 
 
 class LinePrint():
@@ -1217,7 +1219,7 @@ class InterFits(object):
                 bl_min, bl_max = (2048 * ref_ant, 2048 * ref_ant + self.n_ant + 65536)
             for b in range(bl_min, bl_max + 1): bl_ids.append(b)
 
-            return set(bl_ids)
+            return bl_ids
         else:
             print "Lower triangle not supported yet"
             raise
