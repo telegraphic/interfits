@@ -935,41 +935,7 @@ class LedaFits(InterFits):
 
         assert flux.dtype == 'complex64'
         self.d_uv_data["FLUX"] = flux.view('float32')
-        
-    def extractTotalPower(self, antenna_id, timestamps=False):
-        """ Extract autocorrelation of a give antenna
- 
-        Parameters
-        ----------
-        antenna_id: int
-            ID of antenna to extract
-        timestamps: bool
-            Default False. Returns (timestamps, data) tuple if true,
-            else returns only data
- 
-        Returns
-        -------
-        Returns array with dimensions (n_stokes, n_int, n_channel)
-        if timestamps arg is set to True, returns (timestamps, data)
-        """
-        
-        bls   = self.d_uv_data["BASELINE"]
-        bl_id = antenna_id * 256 + antenna_id
-        
-        try:
-            stokes = self.stokes
-        except AttributeError:
-            self.stokes = self.formatStokes()
-            stokes = self.stokes
-            
-        data = stokes[:, bls == bl_id]
-        if timestamps is False:
-            return data
-        else:
-            ts = self.d_uv_data["TIME"]
-            ts = ts[bls == bl_id]
-            return ts, data
-            
+
     def _fix_antenna_mapping_hack(self):
         """ Fix the antenna mapping for LEDA-512
 
