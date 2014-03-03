@@ -47,7 +47,7 @@ class LedaFits(InterFits):
         filename (str): name of file. Alternatively, if a psrdada header dictionary
                         is passed, data will be loaded from shared memory. File type
                         is inferred from extension (unless filetype arg is also passed).
-        filetype (str): ffaults to none. If passed, treat file as having an explicit
+        filetype (str): Defaults to none. If passed, treat file as having an explicit
                         type. Useful for when extension does not match data.
         """
         # Check what kind of file to load
@@ -244,20 +244,14 @@ class LedaFits(InterFits):
                     bl_lower += bls
             else:
                 h2("Loading visibility data")
-                d   = dada.DadaSubBand(self.filename, n_int)
+                d   = dada.DadaReader(self.filename, n_int)
                 vis = d.data
                 self.dada_header = d.header
                 try:
-                    n_chans = int(d.header["NCHAN"])
-                    n_pol   = int(d.header["NPOL"])
-                    n_ant   = int(d.header["NSTATION"])
-
-                    if n_int is None:
-                        file_size_hdr = int(d.header["FILE_SIZE"])
-                        file_size_dsk = os.path.getsize(self.filename)
-                        file_size     = min([file_size_hdr, file_size_dsk])
-                        bpa           = int(d.header["BYTES_PER_AVG"])
-                        n_int = file_size / bpa
+                    n_chans = d.n_chans
+                    n_pol   = d.n_pol
+                    n_ant   = d.n_ant
+                    n_int   = d.n_int
                 except ValueError:
                     raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
 
@@ -338,44 +332,40 @@ class LedaFits(InterFits):
             tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds
             navg   = int(d.header["NAVG"])           # Number of averages per integration
             int_tim = tsamp * navg                   # Integration time is tsamp * navg
-            self.tInt = int_tim
+            self.t_int = d.t_int
             
             # Compute time offset
             h2("Computing UTC offsets")
-            dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
-
-            byte_offset = int(d.header["OBS_OFFSET"])
-            bytes_per_avg = int(d.header["BYTES_PER_AVG"])
-            num_int_since_obs_start = byte_offset / bytes_per_avg
-            time_offset = num_int_since_obs_start * int_tim
-
-            dt_obj = dt_obj + timedelta(seconds=time_offset)
-            date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
-            dd_obs   = dt_obj.strftime("%Y-%m-%d")
+            dt_obj      = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
+            time_offset = d.t_offset # Time offset since observation began
+            dt_obj      = dt_obj + timedelta(seconds=time_offset)
+            date_obs    = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
+            dd_obs      = dt_obj.strftime("%Y-%m-%d")
 
             print "UTC START:   %s"%d.header["UTC_START"]
             print "TIME OFFSET: %s"%timedelta(seconds=time_offset)
             print "NEW START:   %s"%date_obs
 
-            self.date_obs   = date_obs
-            self.h_params["NSTOKES"] = 4
-            self.h_params["NBAND"]   = 1
-            self.h_params["NCHAN"]   = int(d.header["NCHAN"])
-            self.h_common["NO_CHAN"] = int(d.header["NCHAN"])
-            self.h_common["REF_FREQ"] = float(d.header["CFREQ"]) * 1e6
-            self.h_common["CHAN_BW"]  = float(d.header["BW"]) * 1e6 / self.h_params["NCHAN"]
-            self.h_common["REF_PIXL"] = self.h_params["NCHAN"] / 2
-            self.h_common["RDATE"]    = dd_obs  # Ignore time
+            self.date_obs = date_obs
+            self.h_params["NSTOKES"]  = 4
+            self.h_params["NBAND"]    = 1
+            self.h_params["NCHAN"]    = d.n_chans
+            self.h_common["NO_CHAN"]  = d.n_chans
+            self.h_common["REF_FREQ"] = d.c_freq_mhz * 1e6
+            self.h_common["CHAN_BW"]  = d.chan_bw_mhz * 1e6
+            self.h_common["REF_PIXL"] = d.n_chans / 2 + 1
+            self.h_common["RDATE"]    = dd_obs  # Ignore time component
 
-            self.d_frequency["CH_WIDTH"]  = self.h_common["CHAN_BW"]
-            self.d_frequency["TOTAL_BANDWIDTH"] = float(d.header["BW"]) * 1e6
+            self.d_frequency["CH_WIDTH"]  = d.chan_bw_mhz * 1e6
+            self.d_frequency["TOTAL_BANDWIDTH"] = d.bandwidth_mhz * 1e6
             self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
             self.stokes_vals = [-5, -6, -7, -8]
+
 
             self.d_array_geometry["ANNAME"] = ["Stand%03d"%i for i in range(len(self.d_array_geometry["ANNAME"]))]
             self.d_array_geometry["NOSTA"]  = [i for i in range(len(self.d_array_geometry["NOSTA"]))]
 
-            self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * int_tim
+            self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * d.t_int
 
             # Recreate list of baselines
             bl_ids, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=False)
@@ -465,7 +455,7 @@ class LedaFits(InterFits):
                 'dada': self.inspectDada
         }.get(filetype, self.readError)()
 
-    def inspectDada(self, n_int=None,  n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+    def inspectDada(self, n_int=None,  header_dict=None, data_arr=None):
             """ Inspect a LEDA DADA file and return a dictionary describing the file contents.
             
             header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
@@ -485,15 +475,15 @@ class LedaFits(InterFits):
                     bl_lower += bls
             else:
                 h2("Inspecting visibility data")
-                d   = dada.DadaSubBand(self.filename, n_int, inspectOnly=True)
+                d   = dada.DadaReader(self.filename, n_int, inspectOnly=True)
                 self.dada_header = d.header
                 try:
-                    n_chans = int(d.header["NCHAN"])
-                    n_pol   = int(d.header["NPOL"])
-                    n_ant   = int(d.header["NSTATION"])
+                    n_chans = d.n_chans
+                    n_pol   = d.n_pol
+                    n_ant   = d.n_ant
 
                     if n_int is None:
-                        n_int = int(d.header["FILE_SIZE"]) / int(d.header["BYTES_PER_AVG"])
+                        n_int = d.n_int
                 except ValueError:
                     raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
                     
@@ -507,24 +497,21 @@ class LedaFits(InterFits):
             metadata['telescope']  = d.header["TELESCOPE"]
             
             ## Integration time
-            metadata['tInt'] = float(d.header['NAVG'])*float(d.header['NFFT'])/float(d.header['FREQ'])/1e6
+            metadata['tInt'] = d.t_int
             
             ## Time offset
             dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
-            byte_offset = int(d.header["OBS_OFFSET"])
-            bytes_per_avg = int(d.header["BYTES_PER_AVG"])
-            num_int = byte_offset / bytes_per_avg
-            time_offset = num_int * metadata['tInt']
+            time_offset = d.t_offset
             dt_obj = dt_obj + timedelta(seconds=time_offset)
             date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
             dd_obs   = dt_obj.strftime("%Y-%m-%d")
             metadata['tstart'] = float(dt_obj.strftime("%s.%f"))
 
             ## Frequency information
-            metadata['nchan']   = int(d.header["NCHAN"])
-            metadata['reffreq'] = float(d.header["CFREQ"]) * 1e6
-            metadata['refpixel'] = int(d.header["NCHAN"]) / 2
-            metadata['chanbw'] = float(d.header["BW"]) * 1e6 / metadata['nchan']
+            metadata['nchan']   = d.n_chans
+            metadata['reffreq'] = d.c_freq_mhz * 1e6
+            metadata['refpixel'] = d.n_chans / 2 + 1
+            metadata['chanbw']  = d.chan_bw_mhz * 1e6
 
             # Done
             return metadata
@@ -671,7 +658,7 @@ class LedaFits(InterFits):
         dd, tt = [], []
         for ii in range(n_iters):
             jd, jt = coords.convertToJulianTuple(self.date_obs)
-            tdelta = self.tInt * ii / 86400.0 # In days
+            tdelta = self.t_int * ii / 86400.0 # In days
             jds = [jd for jj in range(len(ant_arr))]
             jts = [jt + tdelta for jj in range(len(ant_arr))]
             dd.append(jds)
@@ -792,8 +779,8 @@ class LedaFits(InterFits):
         h2("Fixing NOPCAL (setting to zero)")
         self.h_antenna["NOPCAL"] = 0
 
-        h2("Setting INTTIME to %s" % self.tInt)
-        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * self.tInt
+        h2("Setting INTTIME to %s" % self.t_int)
+        self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * self.t_int
 
     def flag_antenna(self, antenna_id, reason=None, severity=0):
         """ Flag antenna as bad
@@ -985,3 +972,58 @@ class LedaFits(InterFits):
              ts = self.d_uv_data["TIME"]
              ts = ts[bls == bl_id]
              return ts, data
+             
+    def _fix_antenna_mapping_hack(self):
+        """ Fix the antenna mapping for LEDA-512
+
+        In January 2014 we switched cables over so that the mapping is now crazy.
+        I don't see this as a long-term crosstalk solution so have implemented this
+        hack method to swap them over.
+        """
+        # What it should be : what it actually is
+        mapping = {
+            "255A" : "238A",
+            "255B" : "240B",
+            "242B" : "253B",
+            "240B" : "252B",
+            "252A" : "254A",
+            "252B" : "244B",
+            "256B" : "248B",
+            "248B" : "256B",
+            "245B" : "255B",
+            "253B" : "245B",
+            "253A" : "255A",
+            "244B" : "254B",
+            "238A" : "252A",
+            "250B" : "242B",
+            "250A" : "253A",
+            "254B" : "250B",
+            "254A" : "250A"
+        }
+
+        # Create a temp copy of the flux data
+        bls_all    = set(self.d_uv_data["BASELINE"])
+        flux_old   = self.d_uv_data["FLUX"]
+        flux_new   = np.copy(self.d_uv_data["FLUX"])
+
+        for k in mapping.keys():
+            # Figure out what antenna and pol we have from the mapping dict
+            old, new = k, mapping[k]
+            ant_old, ant_new = float(old[:2]), float(new[:2])
+            pol_old, pol_new = old[3], new[3]
+
+            # Find all affected baselines
+            bl_old  = self.search_baselines(ant_old)
+            bl_new  = self.search_baselines(ant_new)
+
+            # We want to replace data in given with actual
+            for bl in bl_old:
+
+                # ant 1 and ant 255
+                # 1a255a 1b255b 1a255b 1b255a
+
+                data_temp = flux_old[bls_all == bl]
+
+                flux_new[bls_all == bl] = data_actual
+
+                #GAAAARRGHH!!!
