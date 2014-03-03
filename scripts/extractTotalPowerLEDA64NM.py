@@ -54,7 +54,7 @@ def main(args):
 	for i,group in enumerate(groups):
 		## Sort the group by frequency
 		freqs = []
-		for start,stop in group[2][:2]:
+		for start,stop,cbw in group[2]:
 			freqs.append(start)
 		freqOrder = [j[0] for j in sorted(enumerate(freqs), key=lambda x:x[1])]
 		group[1] = [group[1][j] for j in freqOrder]
@@ -67,11 +67,11 @@ def main(args):
 		for j,(name,(start,stop,chanBW)) in enumerate(zip(group[1], group[2])):
 			### Check for frequency continuity
 			try:
-				freqDiff = start - oldStop + chanBW
+				freqDiff = start - oldStop
 			except NameError:
-				freqDiff = 0
+				freqDiff = chanBW
 			oldStop = stop
-			if freqDiff != 0:
+			if freqDiff != chanBW:
 				valid = False
 				
 			### Report on this file
