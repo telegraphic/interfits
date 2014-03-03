@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -24,6 +23,10 @@ except:
 
 from lib import dada, coords
 import ledafits_config
+
+__version__ = '0.0'
+__all__ = ['HeaderDataUnit', 'LedaFits', '__version__', '__all__']
+
 
 class HeaderDataUnit(object):
     """ Very basic object with header and data units """
