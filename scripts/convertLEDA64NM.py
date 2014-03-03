@@ -22,15 +22,14 @@ def main(args):
 	for filename in filenames:
 		uvw = LedaFits()
 		metadataList.append( (filename, uvw.inspectFile(filename)) )
-		freqStart = metadata['reffreq'] + (1                 - metadata['refpixel'])*metadata['chanbw']
-		freqStop  = metadata['reffreq'] + (metadata['nchan'] - metadata['refpixel'])*metadata['chanbw']
 		
 	# Group the files by start time and save the filenames and frequency ranges
 	groups = []
 	for filename,metadata in metadataList:
 		tStart = metadata['tstart']
-		freqStart = metadata['reffreq'] + 0.0
-		freqStop  = metadata['reffreq'] + metadata['nchan']*metadata['chanbw']
+		chanBW = metadata['chanbw']
+		freqStart = metadata['reffreq'] + (0                   - metadata['refpixel'])*chanBW
+		freqStop  = metadata['reffreq'] + (metadata['nchan']-1 - metadata['refpixel'])*chanBW
 		
 		## See if this file represents the start of a new group or not
 		new = True
@@ -38,12 +37,12 @@ def main(args):
 			if tStart == group[0]:
 				new = False
 				group[1].append(filename)
-				group[2].append((freqStart,freqStop))
+				group[2].append((freqStart,freqStop,chanBW))
 				break
 				
 		## A new group has been found
 		if new:
-			group = [tStart, [filename,], [(freqStart,freqStop),]]
+			group = [tStart, [filename,], [(freqStart,freqStop,chanBW),]]
 			groups.append(group)
 			
 	# Report
@@ -52,7 +51,7 @@ def main(args):
 	for i,group in enumerate(groups):
 		## Sort the group by frequency
 		freqs = []
-		for start,stop in group[2]:
+		for start,stop in group[2][:2]:
 			freqs.append(start)
 		freqOrder = [j[0] for j in sorted(enumerate(freqs), key=lambda x:x[1])]
 		group[1] = [group[1][j] for j in freqOrder]
@@ -62,10 +61,10 @@ def main(args):
 		print "  Group #%i" % (i+1,)
 		print "    -> start time %s (%.2f)" % (datetime.utcfromtimestamp(group[0]), group[0])
 		valid = True
-		for j,(name,(start,stop)) in enumerate(zip(group[1], group[2])):
+		for j,(name,(start,stop,chanBW)) in enumerate(zip(group[1], group[2])):
 			### Check for frequency continuity
 			try:
-				freqDiff = start - oldStop
+				freqDiff = start - oldStop + chanBW
 			except NameError:
 				freqDiff = 0
 			oldStop = stop
