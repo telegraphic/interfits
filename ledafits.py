@@ -221,7 +221,7 @@ class LedaFits(InterFits):
         self.source    = self.d_source["SOURCE"][0]
 
 
-    def readDada(self, n_int=None, n_stk=4, xmlbase=None, header_dict=None, data_arr=None):
+    def readDada(self, n_int=None, xmlbase=None, header_dict=None, data_arr=None, inspectOnly=False):
             """ Read a LEDA DADA file.
 
             header_dict (dict): psrdada header. Defaults to None. If a dict is passed, then instead of
@@ -241,7 +241,7 @@ class LedaFits(InterFits):
                     bl_lower += bls
             else:
                 h2("Loading visibility data")
-                d   = dada.DadaReader(self.filename, n_int)
+                d   = dada.DadaReader(self.filename, n_int, inspectOnly=inspectOnly)
                 vis = d.data
                 self.dada_header = d.header
                 try:
@@ -249,41 +249,20 @@ class LedaFits(InterFits):
                     n_pol   = d.n_pol
                     n_ant   = d.n_ant
                     n_int   = d.n_int
+                    self.n_ant = n_ant
                 except ValueError:
                     raise RuntimeError("Cannot load NCHAN / NPOL / NSTATION from dada file")
 
-                h2("Generating baseline IDs")
+            if not header_dict:
+                h2("Converting visibilities to FLUX columns")
+                do_remap = False
+                if d.header["TELESCOPE"] in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDAOVRO', 'LEDA512', 'LEDA-OVRO'):
+                    do_remap = False
+                flux = self._vis_matrix_to_flux(vis, remap=do_remap)
                 bls, ant_arr = coords.generateBaselineIds(n_ant)
                 bl_lower = []
                 for dd in range(vis.shape[0] / n_int):
                     bl_lower += bls
-
-            if not header_dict:
-                h2("Converting visibilities to FLUX columns")
-                # Need to convert into real & imag
-                # Not a major performance hit as these are super fast.
-                re_vis = np.real(vis)
-                im_vis = np.imag(vis)
-                # assert np.allclose(vis, re_vis + np.complex(1j)*im_vis)
-                flux = np.zeros([len(bl_lower) * n_int, n_chans * n_stk * 2], dtype='float32')
-                for int_num in xrange(n_int):
-                    idx = int_num * len(bl_lower)
-                    for ii in xrange(len(bl_lower)):
-                        ant1, ant2 = ant_arr[ii]
-                        ant1, ant2 = ant1 - 1, ant2 - 1
-
-                        re_xx = re_vis[int_num, ant1, ant2, :, 0, 0]
-                        re_yy = re_vis[int_num, ant1, ant2, :, 1, 1]
-                        re_xy = re_vis[int_num, ant1, ant2, :, 0, 1]
-                        re_yx = re_vis[int_num, ant1, ant2, :, 1, 0]
-
-                        im_xx = im_vis[int_num, ant1, ant2, :, 0, 0]
-                        im_yy = im_vis[int_num, ant1, ant2, :, 1, 1]
-                        im_xy = im_vis[int_num, ant1, ant2, :, 0, 1]
-                        im_yx = im_vis[int_num, ant1, ant2, :, 1, 0]
-
-                        flux[idx + ii] = np.column_stack((re_xx, im_xx, re_yy, im_yy, re_xy, im_xy, re_yx, im_yx)).flatten()
-                #print flux.shape
 
             self.d_uv_data["BASELINE"] = np.array([bl_lower for ii in range(n_int)]).flatten()
             self.d_uv_data["FLUX"] = flux
@@ -417,6 +396,126 @@ class LedaFits(InterFits):
         print "Latitude:  %s"%self.site.lat
         print "Longitude: %s"%self.site.long
         print "Elevation: %s"%self.site.elev
+
+    def _vis_matrix_to_flux(self, vis, remap=False):
+        """Convert a visibility matrix to FITS-IDI flux standard
+
+        Notes
+        -----
+        Visibility matrix should have shape:
+            (n_int, ant1, ant2, chans, pola, polb)
+        FITS-IDI is a flattened row on a per-baseline basis:
+            (xx, yy, xy, yx)
+        where each xx is (re_chan0, im_chan0, ... re_chanX, im_chanX).
+
+        We only read one triangle of the visibility matrix, with ant1 >= ant2
+        """
+
+        # h2("Generating baseline IDs")
+        n_int   = vis.shape[0]
+        n_ant   = vis.shape[1]
+        n_chans = vis.shape[3]
+        n_stk   = 4
+        n_bls   = n_ant * (n_ant - 1) / 2 + n_ant
+
+        bls, ant_arr = coords.generateBaselineIds(n_ant)
+        ant_arr0     = np.array(ant_arr) - 1 # Zero indexed
+        flux         = np.zeros([n_bls * n_int, n_chans * n_stk * 2], dtype='float32')
+
+        try:
+            assert vis.dtype == 'complex64'
+        except AssertionError:
+            raise RuntimeError('Vis data is not complex64, but is instead %s'%vis.dtype)
+
+        for int_num in xrange(n_int):
+            idx = int_num * n_bls
+            vis_int = vis[int_num, ...]
+            for ii in xrange(n_bls):
+                ant1, ant2 = ant_arr0[ii]
+                vv = vis_int[ant1, ant2, ...]
+                xx = vv[:, 0, 0]
+                yy = vv[:, 1, 1]
+                xy = vv[:, 0, 1]
+                yx = vv[:, 1, 0]
+                flux[idx + ii] = np.column_stack((xx, yy, xy, yx)).flatten().view('float32')
+
+        if remap:
+            h2("Remapping antennas")
+            mapping = {
+                "255A" : "238A",
+                "255B" : "240B",
+                "242B" : "253B",
+                "240B" : "252B",
+                "252A" : "254A",
+                "252B" : "244B",
+                "256B" : "248B",
+                "248B" : "256B",
+                "245B" : "255B",
+                "253B" : "245B",
+                "253A" : "255A",
+                "244B" : "254B",
+                "238A" : "252A",
+                "250B" : "242B",
+                "250A" : "253A",
+                "254B" : "250B",
+                "254A" : "250A"
+            }
+            map_keys = set(mapping.keys())
+            bls_all, ants = coords.generateBaselineIds(self.n_ant, autocorrs=True)
+
+            for int_num in xrange(n_int):
+                idx = int_num * n_bls
+                vis_int = vis[int_num, ...]
+
+                # For every antenna remapping
+                for k in map_keys:
+                    ant_old, pol_id = int(k[:3]), 0 if k[3] == 'B' else 1
+                    ant_new         = int(mapping[k][:3])
+
+                    # Find affected baselines
+                    bls_old = self.search_baselines(ant_old)
+                    bls_new = self.search_baselines(ant_new)
+
+                    # For every baseline affected
+                    for bb in range(len(bls_old)):
+                        # Find new antenna pair indexes
+                        bl_old, bl_new = bls_old[bb], bls_new[bb]
+                        bl_idx = bls_all.index(bl_old)
+
+                        if bl_new >= 65536:
+                            a1, a2   = (bl_new - 65536) / 2048 - 1, (bl_new - 65536) % 2048 - 1
+                        else:
+                            a1, a2   = bl_new / 256 - 1, bl_new % 256 - 1
+
+                        # Grab all the visibility data for this baseline
+                        xx = vis_int[a1, a2, :, 0, 0]
+                        xy = vis_int[a1, a2, :, 0, 1]
+                        yx = vis_int[a1, a2, :, 1, 0]
+                        yy = vis_int[a1, a2, :, 1, 1]
+
+                        # Now we need to figure out what we need to update
+                        # Are we updating pol A or pol B? Ant1 or Ant2?
+                        data = flux[idx + bl_idx]
+                        sp = len(xx) * 2
+                        if ant_new == a1:
+                            if pol_id == 0:
+                                data[0:sp]      = xx.flatten().view('float32')
+                                data[2*sp:3*sp] = xy.flatten().view('float32')
+                            else:
+                                data[1*sp:2*sp] = yy.flatten().view('float32')
+                                data[3*sp:]     = yx.flatten().view('float32')
+                        else:
+                            if pol_id == 0:
+                                data[0:sp]      = xx.flatten().view('float32')
+                                data[2*sp:3*sp] = yx.flatten().view('float32')
+                            else:
+                                data[1*sp:2*sp] = yy.flatten().view('float32')
+                                data[3*sp:]     = xy.flatten().view('float32')
+
+                        # Write this back into the right baseline
+                        flux[idx + bl_idx] = data
+        return flux
+
 
     def inspectFile(self, filename=None, filetype=None):
         """ Check file type, and load metadata corresponding
@@ -933,58 +1032,9 @@ class LedaFits(InterFits):
         assert flux.dtype == 'complex64'
         self.d_uv_data["FLUX"] = flux.view('float32')
 
-    def _fix_antenna_mapping_hack(self):
-        """ Fix the antenna mapping for LEDA-512
+    def _remap_antenna_hack(self):
+        """ Horrible hack to remap antennas - for Jan2014+ LEDA512 """
 
-        In January 2014 we switched cables over so that the mapping is now crazy.
-        I don't see this as a long-term crosstalk solution so have implemented this
-        hack method to swap them over.
-        """
-        # What it should be : what it actually is
-        mapping = {
-            "255A" : "238A",
-            "255B" : "240B",
-            "242B" : "253B",
-            "240B" : "252B",
-            "252A" : "254A",
-            "252B" : "244B",
-            "256B" : "248B",
-            "248B" : "256B",
-            "245B" : "255B",
-            "253B" : "245B",
-            "253A" : "255A",
-            "244B" : "254B",
-            "238A" : "252A",
-            "250B" : "242B",
-            "250A" : "253A",
-            "254B" : "250B",
-            "254A" : "250A"
-        }
 
-        # Create a temp copy of the flux data
-        bls_all    = set(self.d_uv_data["BASELINE"])
-        flux_old   = self.d_uv_data["FLUX"]
-        flux_new   = np.copy(self.d_uv_data["FLUX"])
 
-        for k in mapping.keys():
-            # Figure out what antenna and pol we have from the mapping dict
-            old, new = k, mapping[k]
-            ant_old, ant_new = float(old[:2]), float(new[:2])
-            pol_old, pol_new = old[3], new[3]
-
-            # Find all affected baselines
-            bl_old  = self.search_baselines(ant_old)
-            bl_new  = self.search_baselines(ant_new)
-
-            # We want to replace data in given with actual
-            for bl in bl_old:
-
-                # ant 1 and ant 255
-                # 1a255a 1b255b 1a255b 1b255a
-
-                data_temp = flux_old[bls_all == bl]
-
-                flux_new[bls_all == bl] = data_actual
-
-                #GAAAARRGHH!!!
 
