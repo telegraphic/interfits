@@ -1191,36 +1191,37 @@ class InterFits(object):
             bl_id = ant1 * 256 + ant2
         return bl_id
 
-    def search_baselines(self, ref_ant, triangle='upper'):
+    def search_baselines(self, ref_ant, autocorrs=True):
         """ Retrieve baseline ids that contain a given antenna
 
         ref_ant (int):  Antenna of interest
         triangle (str): Defaults to upper matrix order (lower not supported yet)
 
         returns: a list of all matching baseline IDs
+
+        TODO: Add different triangle support
         """
-        bl_ids = []
+        try:
+            assert ref_ant <= self.n_ant
+        except AssertionError:
+            raise RuntimeError("Ref ant is larger than number of antennas: %i > %i"%(ref_ant, self.n_ant))
 
-        if triangle == 'upper':
-            # Get values in array
-            if ref_ant > 1:
-                for i in range(1, ref_ant):
-                    if i > 255:
-                        bl_ids.append(i * 2048 + ref_ant + 65536)
+        bls, ant_arr = [], []
+        for ii in range(1, self.n_ant + 1):
+            for jj in range(1, self.n_ant + 1):
+                if jj >= ii:
+                    if autocorrs is False and ii == jj:
+                        pass
                     else:
-                        bl_ids.append(i * 256 + ref_ant)
+                        ant_arr.append((ii, jj))
+                        if ii > 255 or jj > 255:
+                            bl_id = ii * 2048 + jj + 65536
+                        else:
+                            bl_id = 256 * ii + jj
+                        if ii == ref_ant or jj == ref_ant:
+                            bls.append(bl_id)
+        return bls
 
-            # Get row
-            if ref_ant < 255:
-                bl_min, bl_max = (256 * ref_ant, 256 * ref_ant + self.n_ant)
-            else:
-                bl_min, bl_max = (2048 * ref_ant, 2048 * ref_ant + self.n_ant + 65536)
-            for b in range(bl_min, bl_max + 1): bl_ids.append(b)
-
-            return set(bl_ids)
-        else:
-            print "Lower triangle not supported yet"
-            raise
 
     def extract_integrations(self, start=None, stop=None):
         """ Extract a subset of integrations from the file
