@@ -18,7 +18,8 @@ Requirements
 * pyfits > 2.3 - http://www.stsci.edu/institute/software_hardware/pyfits
 * lxml - http://lxml.de/
 * h5py - http://www.h5py.org/
+* pyephem - http://rhodesmill.org/pyephem/
 
-For QtUv, PyQt4 or PySide and matplotlib are also required.
+For the included scripts, PyQt4 or PySide, pandas, ujson, LSL, and matplotlib are also required.
 
 
