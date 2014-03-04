@@ -49,7 +49,7 @@ def callSubprocess(args, test=False):
 
 def computeLstFromDada(filename):
     """ Print the sidereal times of a dada file. Now reads DADA header """
-    d = dada.DadaSubBand(filename, n_int=0)
+    d = dada.DadaReader(filename, n_int=0)
 
     telescope = d.header["TELESCOPE"]
     if telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDAOVRO', 'LEDA512', 'LEDA-OVRO'):
@@ -139,8 +139,8 @@ if __name__ == "__main__":
     
     try:
         filename_dada = args[0]
-        filename_la = filename_dada+'_%s.LA'%(options.band_id - 1)
-        filename_lc = filename_dada+'_%s.LC'%(options.band_id - 1)
+        filename_la = filename_dada+'_0.LA'
+        filename_lc = filename_dada+'_0.LC'
     except IndexError:
         print "Error: you must pass a filename."
         print "use -h for help"
@@ -156,18 +156,19 @@ if __name__ == "__main__":
             raise
 
     # Read all required fields from dada header
-    d = dada.DadaSubBand(filename_dada, n_int=0)
+    d = dada.DadaReader(filename_dada, n_int=0)
     telescope = d.header["TELESCOPE"]
+    fileroot         = ledafits_config.fileroot
     if telescope in ('LEDA', 'LWAOVRO', 'LWA-OVRO', 'LEDAOVRO', 'LEDA512', 'LEDA-OVRO'):
         site             = ledafits_config.ovro
-        template         = "uvfits_headers_ovro/header.tpl"
-        tpl_root         = "uvfits_headers_ovro"
-        lconverter       = "./lconvert512OV"
+        template         = os.path.join(fileroot, "lconverter/uvfits_headers_ovro/header.tpl")
+        tpl_root         = os.path.join(fileroot, "lconverter/uvfits_headers_ovro")
+        lconverter       = os.path.join(fileroot, "lconverter/lconvert512OV")
     elif telescope in ('LWA1', 'LWA-1', 'LWA-NM', 'LWANM', 'LEDA64', 'LEDA64-NM'):
         site             = ledafits_config.lwa1
-        template         = "uvfits_headers_nm/header.tpl"
-        tpl_root         = "uvfits_headers_nm"
-        lconverter       = "./lconvert64NM"
+        template         = os.path.join(fileroot, "lconverter/uvfits_headers_nm/header.tpl")
+        tpl_root         = os.path.join(fileroot, "lconverter/uvfits_headers_nm")
+        lconverter       = os.path.join(fileroot, "lconverter/lconvert64NM")
     else:
         raise RuntimeError("Telescope %s unknown"%telescope)
 
@@ -223,7 +224,7 @@ if __name__ == "__main__":
         corr2uvfits_flags = '-l'
     else: 
         corr2uvfits_flags = ''
-    corr2uvfits_args = ['./corr2uvfits', 
+    corr2uvfits_args = [os.path.join(fileroot, 'lconverter/corr2uvfits'), 
         '-A', '%s,%s'%(long_deg, lat_deg),
         '-a', filename_la,
         '-c', filename_lc,
@@ -238,6 +239,17 @@ if __name__ == "__main__":
     callSubprocess(corr2uvfits_args, test=options.test)
     
     print "\nTidying up..."
-    os.remove(filename_la)
-    os.remove(filename_lc)
+    ii = 0
+    tidy_loop = True
+    while tidy_loop:
+        try:
+            filename_la = filename_dada+'_%i.LA'%ii
+            filename_lc = filename_dada+'_%i.LC'%ii
+            os.remove(filename_la)
+            os.remove(filename_lc)
+            ii += 1
+        except OSError:
+            tidy_loop = False
+            break
+        
     print "DONE!"
