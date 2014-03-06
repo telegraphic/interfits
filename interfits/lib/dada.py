@@ -11,7 +11,7 @@ import numpy as np
 import glob
 import os
 
-from interfits.lib.timeit import timeit
+#from interfits.lib.timeit import timeit
 
 __version__ = '0.0'
 __all__ = ['DadaReader', 'lookup_warn', '__version__', '__all__']
@@ -101,13 +101,16 @@ class DadaReader(object):
             header[key] = value
         self.header = header
 
-        # Lod commonly used values into variables
+        # Load commonly used values into variables
         self.c_freq_mhz     = float(lookup_warn(header, 'CFREQ', 0.))
         self.bandwidth_mhz  = float(lookup_warn(header, 'BW', 1.))
-        self.chan_bw_mhz    = float(header["CHAN_WIDTH"])
         self.n_chans = int(header["NCHAN"])
         self.n_pol   = int(header["NPOL"])
         self.n_ant   = int(header["NSTATION"])
+        try:
+            self.chan_bw_mhz    = float(header["CHAN_WIDTH"])
+        except:
+            self.chan_bw_mhz    = self.bandwidth_mhz / self.n_chans
 
         # Calculate number of integrations within this file
         # File may not be complete, hence file_size_dsk is read too

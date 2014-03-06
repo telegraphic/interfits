@@ -2,7 +2,7 @@
 
 FIELDNAME Zenith
 N_SCANS   $N_SCANS$
-N_INPUTS  64
+N_INPUTS  512
 N_CHANS   $N_CHANS$     # number of channels in spectrum
 CORRTYPE  B             # correlation type to use. 'C'(cross), 'B'(both), or 'A'(auto)
 INT_TIME  $INT_TIME$    # integration time of scan in seconds
