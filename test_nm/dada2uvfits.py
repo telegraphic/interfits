@@ -12,8 +12,12 @@ import re, sys, datetime, os, subprocess, shutil
 from optparse import OptionParser
 from colorama import Fore, Back, Style
 
+from datetime import timedelta
 import ephem
 import numpy as np
+
+from test_main import *
+
 
 # Correlator setup - should not need to change
 SUBBAND_BWIDTH  = 14.4     # Bandwidth in MHz
@@ -21,7 +25,7 @@ SUBBAND_NCHANS  = 600       # Number of channels in each subband
 START_FREQ      = 51.6 - 14.4/2 # Start frequency of correlator in MHz
 N_SCANS         = 100        # Number of scans in a dada file
 
-OFFSET_DELTA, INT_TIME, N_INT = 1044480000, 9.0, 100
+OFFSET_DELTA, INT_TIME, N_INT = 1044480000, 1.0, 100
 (latitude, longitude, elevation) = ('34.07', '-107.628', 2133.6)
 
 def h1(text):
@@ -33,6 +37,10 @@ def h1(text):
         line += "-"
     print(Fore.GREEN + line)
     print(Fore.WHITE)
+
+def printRed(text):
+    """ Print something in red """
+    print(Fore.RED + text + Fore.WHITE)
     
 def callSubprocess(args, test=False):
     """ Run a subprocess call with some printing and stuff """
@@ -44,7 +52,7 @@ def callSubprocess(args, test=False):
         subprocess.call(args)
 
 def computeLstFromFilename(filename):
-    """ Print the sidereal times of dada files in a given directory """
+    """ Print the sidereal times of a dada file. Now reads DADA header """
     # Create OVRO observer
     
     ov = ephem.Observer()
@@ -52,14 +60,25 @@ def computeLstFromFilename(filename):
     ov.lat  = latitude
     ov.elev = elevation
 
-    pat = '(\d+)-(\d+)-(\d+)[-_](\d\d)[:h](\d\d)[:m](\d\d)_(\d+).(\d+).(dada)$'
+    d = dada.DadaReader(filename, n_int=0)
+    
+    dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")                
+    tsamp  = float(d.header["TSAMP"]) * 1e-6 # Sampling time per channel, in microseconds 
+    navg   = int(d.header["NAVG"])           # Number of averages per integration         
+    int_tim = tsamp * navg                   # Integration time is tsamp * navg           
+                                                                                          
+    byte_offset = int(d.header["OBS_OFFSET"])                                             
+    bytes_per_avg = int(d.header["BYTES_PER_AVG"])                                        
+    num_int = byte_offset / bytes_per_avg                                                 
+    time_offset = num_int * int_tim                                                       
+    
+    pat = '(\d+)-(\d+)-(\d+)[-_](\d\d)[:h](\d\d)[:m](\d\d)$'
 
-    match = re.search(pat, filename)
+    match = re.search(pat, d.header["UTC_START"])
     if match:
         # Convert re match to integers, apart from file extension
-        (y, m, d, hh, mm, ss, offset1, offset2) = [int(m) for m in match.groups()[:-1]]
-        tdiff = offset1 / OFFSET_DELTA * INT_TIME * N_INT
-        dt = datetime.datetime(y,m,d,hh,mm,ss) + datetime.timedelta(seconds=tdiff)
+        #(y, m, d, hh, mm, ss) = [int(m) for m in match.groups()[:-1]]
+        dt = dt_obj + timedelta(seconds=time_offset)
         ov.date = dt
         lst = ov.sidereal_time()
         date_str = "%04d%02d%02d"%(dt.year,dt.month,dt.day)
@@ -69,6 +88,10 @@ def computeLstFromFilename(filename):
         #print lst_str  
         #lst = str(lst).split(":")
         #lst_str  = "%s%s%s"%(lst[0], lst[1], lst[2].split(".")[0])
+        
+        printRed( "UTC START:   %s"%d.header["UTC_START"]         )
+        printRed( "TIME OFFSET: %s"%timedelta(seconds=time_offset))
+        printRed( "NEW START:   (%s, %s)"%(date_str, time_str)    )
         
         return date_str, time_str, lst_str
     else:
@@ -131,7 +154,7 @@ if __name__ == "__main__":
     h1("Generating headers")
     date_str, time_str, lst_str = computeLstFromFilename(filename_dada)
     freq_start   = START_FREQ + (options.band_id-1) * SUBBAND_BWIDTH
-    fileroot_out = "%s_b%i_d%s_utc%s"%(options.field_name, options.band_id, date_str, time_str)
+    fileroot_out = "%s_d%s_utc%s"%(options.field_name, options.band_id, date_str, time_str)
     if not os.path.exists(fileroot_out) and not options.test:
         try:
             os.mkdir(fileroot_out)
