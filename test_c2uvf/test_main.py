@@ -1,5 +1,6 @@
 import sys
 sys.path.append("/workdata/leda/interfits")
+sys.path.append("/workdata/leda/interfits/lconverter")
 
 from ledafits import *
 
