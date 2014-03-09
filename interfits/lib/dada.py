@@ -1,9 +1,21 @@
 # -*- coding: utf-8 -*-
+
+"""
+dada.py
+=======
+
+Module for reading in data in the Dada format.
+"""
+
 import numpy as np
 import glob
 import os
 
-#from lib.timeit import timeit
+#from interfits.lib.timeit import timeit
+
+__version__ = '0.0'
+__all__ = ['DadaReader', 'lookup_warn', '__version__', '__all__']
+
 
 def lookup_warn(table, key, default=None):
     try:
@@ -16,6 +28,7 @@ def lookup_warn(table, key, default=None):
         else:
             print "#Warning: No key '%s'" % key
             return None
+
 
 class DadaReader(object):
     """ Dada file reader for raw LEDA correlator data.

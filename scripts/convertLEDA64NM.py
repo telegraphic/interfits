@@ -11,7 +11,7 @@ import sys
 import numpy
 from datetime import datetime
 
-from ledafits import LedaFits
+from interfits.ledafits import LedaFits
 
 
 def main(args):
@@ -27,8 +27,9 @@ def main(args):
 	groups = []
 	for filename,metadata in metadataList:
 		tStart = metadata['tstart']
-		freqStart = metadata['reffreq'] + 0.0
-		freqStop  = metadata['reffreq'] + metadata['nchan']*metadata['chanbw']
+		chanBW = metadata['chanbw']
+		freqStart = metadata['reffreq'] + (1                 - metadata['refpixel'])*chanBW
+		freqStop  = metadata['reffreq'] + (metadata['nchan'] - metadata['refpixel'])*chanBW
 		
 		## See if this file represents the start of a new group or not
 		new = True
@@ -36,12 +37,12 @@ def main(args):
 			if tStart == group[0]:
 				new = False
 				group[1].append(filename)
-				group[2].append((freqStart,freqStop))
+				group[2].append((freqStart,freqStop,chanBW))
 				break
 				
 		## A new group has been found
 		if new:
-			group = [tStart, [filename,], [(freqStart,freqStop),]]
+			group = [tStart, [filename,], [(freqStart,freqStop,chanBW),]]
 			groups.append(group)
 			
 	# Report
@@ -50,7 +51,7 @@ def main(args):
 	for i,group in enumerate(groups):
 		## Sort the group by frequency
 		freqs = []
-		for start,stop in group[2]:
+		for start,stop,cbw in group[2]:
 			freqs.append(start)
 		freqOrder = [j[0] for j in sorted(enumerate(freqs), key=lambda x:x[1])]
 		group[1] = [group[1][j] for j in freqOrder]
@@ -60,14 +61,14 @@ def main(args):
 		print "  Group #%i" % (i+1,)
 		print "    -> start time %s (%.2f)" % (datetime.utcfromtimestamp(group[0]), group[0])
 		valid = True
-		for j,(name,(start,stop)) in enumerate(zip(group[1], group[2])):
+		for j,(name,(start,stop,chanBW)) in enumerate(zip(group[1], group[2])):
 			### Check for frequency continuity
 			try:
 				freqDiff = start - oldStop
 			except NameError:
-				freqDiff = 0
+				freqDiff = chanBW
 			oldStop = stop
-			if freqDiff != 0:
+			if freqDiff != chanBW:
 				valid = False
 				
 			### Report on this file

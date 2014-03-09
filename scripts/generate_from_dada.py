@@ -7,7 +7,7 @@ generate_from_dada
 Generate FITS-IDI files from dada files. 
 """
 
-from ledafits import *
+from interfits.ledafits import *
 
 def generate_fitsidi(filename_in, filename_out=None):
     """ Generate a fitsidi file from a dada file 

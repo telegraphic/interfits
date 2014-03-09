@@ -1,4 +1,9 @@
+# -*- coding: utf-8 -*-
+
 from interfits import *
+
+__version__ '0.0'
+__all__ = ['generateBlankFitsidi', 'fillInFits', '__version__', '__all__']
 
 
 def generateBlankFitsidi(config_xml, n_ant, num_rows, filename_out):

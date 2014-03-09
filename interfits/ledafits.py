@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -10,16 +9,22 @@ L-files and DADA files.
 """
 
 import calendar
-from datetime import timedelta
+from datetime import datetime, timedelta
+import ephem
+import re
+import os
+from lxml import etree
+import numpy as np
+import pyfits as pf
+from lib.json_numpy import *
 
-try:
-    from interfits import InterFits
-    from interfits import *
-except ImportError:
-    from interfits.interfits import *
-
+from interfits import *
 from lib import dada, coords
+from lib.pyFitsidi import *
 import ledafits_config
+
+__version__ = '0.0'
+__all__ = ['HeaderDataUnit', 'LedaFits', '__version__', '__all__']
 
 
 class HeaderDataUnit(object):
@@ -68,21 +73,20 @@ class LedaFits(InterFits):
         """ Lookup dictionary (case statement) for file types """
 
         return {
-            'uvfits': self.readUvfits,
-            'fitsidi': self.readFitsidi,
-            'fidi': self.readFitsidi,
-            'idifits': self.readFitsidi,
-            'hdf5': self.readHdf5,
-            'hdf': self.readHdf5,
-            'h5': self.readHdf5,
-            'lfile': self.readLfile,
-            'LA': self.readLfile,
-            'LC': self.readLfile,
-            'json': self.readJson,
-            'dada': self.readDada
+                'uvfits': self.readUvfits,
+                'fitsidi': self.readFitsidi,
+                'fidi': self.readFitsidi,
+                'idifits': self.readFitsidi,
+                'hdf5': self.readHdf5,
+                'hdf': self.readHdf5,
+                'h5': self.readHdf5,
+                'lfile': self.readLfile,
+                'LA': self.readLfile,
+                'LC': self.readLfile,
+                'json': self.readJson,
+                'dada': self.readDada
         }.get(filetype, self.readError)()
 
-    # noinspection PyNoneFunctionAssignment,PyNoneFunctionAssignment
     def _readLfile(self, n_ant=32, n_pol=2, n_chans=600):
         """ Main L-File reading subroutine.
         Opens L-files and forms a visibility matrix.
@@ -279,14 +283,10 @@ class LedaFits(InterFits):
              tbl_frequency,
              tbl_antenna,
              tbl_source])
-        #print hdulist.info()
-        #hdulist.verify()
 
-        # We are now ready to back-fill Interfits dictionaries using readfitsidi
-        self.fits = hdulist
-        self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
         self.stokes_vals = [-5, -6, -7, -8]
         self.readFitsidi(from_file=False, load_uv_data=False)
+        #hdulist.verify()
 
         self.pp.h2("Populating interfits dictionaries")
         self.setDefaults(n_uv_rows=len(bl_lower * n_int))
@@ -309,9 +309,9 @@ class LedaFits(InterFits):
         date_obs = dt_obj.strftime("%Y-%m-%dT%H:%M:%S")
         dd_obs = dt_obj.strftime("%Y-%m-%d")
 
-        print "UTC START:   %s" % d.header["UTC_START"]
-        print "TIME OFFSET: %s" % timedelta(seconds=time_offset)
-        print "NEW START:   %s" % date_obs
+        self.pp.pp("UTC START:   %s" % d.header["UTC_START"])
+        self.pp.pp("TIME OFFSET: %s" % timedelta(seconds=time_offset))
+        self.pp.pp("NEW START:   %s" % date_obs)
 
         self.date_obs = date_obs
         self.h_params["NSTOKES"] = 4
@@ -564,9 +564,6 @@ class LedaFits(InterFits):
                     'instrument': d.header["INSTRUMENT"], 'telescope': d.header["TELESCOPE"], 'tInt': d.t_int}
 
         ## Basic setup
-
-        ## Integration time
-
         ## Time offset
         dt_obj = datetime.strptime(d.header["UTC_START"], "%Y-%m-%d-%H:%M:%S")
         time_offset = d.t_offset
@@ -579,6 +576,7 @@ class LedaFits(InterFits):
         metadata['nchan'] = d.n_chans
         metadata['reffreq'] = d.c_freq_mhz * 1e6
         metadata['chanbw'] = d.chan_bw_mhz * 1e6
+        metadata['refpixel'] = d.n_chans / 2 + 1
 
         return metadata
 
@@ -594,15 +592,15 @@ class LedaFits(InterFits):
 
         # Find HA and DEC of source
         if src.upper() == 'ZEN':
-            H, d = 0, float(self.site.lat)
-            dec_deg = np.rad2deg(d)
-            ra_deg = lst_deg
-            ha_deg = 0
+            H, d     = 0, float(self.site.lat)
+            dec_deg  = np.rad2deg(d)
+            ra_deg   = lst_deg
+            ha_deg   = 0
         else:
             try:
                 src_names = ledafits_config.src_names
-                src_ras = ledafits_config.src_ras
-                src_decs = ledafits_config.src_decs
+                src_ras   = ledafits_config.src_ras
+                src_decs  = ledafits_config.src_decs
                 idx = src_names.index(src.upper())
                 self.pp.h2("Phasing to %s" % src_names[idx])
                 ra_deg, dec_deg = src_ras[idx], src_decs[idx]
@@ -617,13 +615,13 @@ class LedaFits(InterFits):
         """ set LEDA specific default values """
         if n_uv_rows is None:
             n_uv_rows = len(self.d_uv_data["BASELINE"])
-
+            
         self.setDefaults(n_uv_rows)
 
         self.d_frequency["CH_WIDTH"] = self.s2arr(ledafits_config.CH_WIDTH)
         self.d_frequency["TOTAL_BANDWIDTH"] = self.s2arr(ledafits_config.SUB_BW)
-        self.h_uv_data["TELESCOP"] = ledafits_config.TELESCOP
-        self.h_array_geometry["ARRNAM"] = ledafits_config.ARRNAM
+        self.h_uv_data["TELESCOP"]          = ledafits_config.TELESCOP
+        self.h_array_geometry["ARRNAM"]     = ledafits_config.ARRNAM
 
     def loadAntArr(self):
         """ Loads ANTENNA and ARRAY_GEOMETRY tables as set in leda_config """
@@ -931,7 +929,6 @@ class LedaFits(InterFits):
             assert flux.dtype == 'complex64'
             self.d_uv_data["FLUX"] = flux.view('float32')
 
-    # noinspection PyUnusedLocal
     def apply_cable_delays(self, debug=True):
         """ Apply antenna cable delays
 
@@ -1000,3 +997,37 @@ class LedaFits(InterFits):
 
         assert flux.dtype == 'complex64'
         self.d_uv_data["FLUX"] = flux.view('float32')
+        
+    def extractTotalPower(self, antenna_id, timestamps=False):
+         """ Extract autocorrelation of a give antenna
+  
+         Parameters
+         ----------
+         antenna_id: int
+             ID of antenna to extract
+         timestamps: bool
+             Default False. Returns (timestamps, data) tuple if true,
+             else returns only data
+  
+         Returns
+         -------
+         Returns array with dimensions (n_stokes, n_int, n_channel)
+         if timestamps arg is set to True, returns (timestamps, data)
+         """
+         
+         bls   = self.d_uv_data["BASELINE"]
+         bl_id = antenna_id * 256 + antenna_id
+         
+         try:
+             stokes = self.stokes
+         except AttributeError:
+             self.stokes = self.formatStokes()
+             stokes = self.stokes
+             
+         data = stokes[:, bls == bl_id]
+         if timestamps is False:
+             return data
+         else:
+             ts = self.d_uv_data["TIME"]
+             ts = ts[bls == bl_id]
+             return ts, data

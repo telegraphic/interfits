@@ -1,6 +1,5 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
-# encoding: utf-8
+
 """
 coords.py
 =========
@@ -18,6 +17,11 @@ import time, calendar
 from datetime import datetime
 
 from numpy import sin, cos
+
+__version__ = '0.0'
+__all__ = ['AntArray', 'makeSource', 'generateBaselineIds', 'computeUVW', 'computeBaselineVectors', 'coordTransform', 
+           'geo2ecef', 'ecef2geo', 'convertToJulianTuple', 'parse_timestring', 'LIGHT_SPEED', '__version__', '__all__']
+
 
 LIGHT_SPEED = 299792458.0 # From Google
 
@@ -134,7 +138,7 @@ def computeUVW(xyz, H, d, in_seconds=True, conjugate=False):
     if type(xyz) == type(np.array([1])):
         is_list = False
         try:
-            print xyz.shape
+            #print xyz.shape
             x, y, z = np.split(xyz, 3, axis=1)
         except:
             print xyz.shape

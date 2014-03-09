@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -19,6 +18,9 @@ from colorama import Fore
 from lib.pyFitsidi import *
 from lib.json_numpy import *
 from lib import coords
+
+__version__ = '0.0'
+__all__ = ['LinePrint', 'h1', 'h2', 'h3', 'InterFits', '__version__', '__all__']
 
 
 class LinePrint():

@@ -27,7 +27,7 @@ __modified__ = datetime.fromtimestamp(os.path.getmtime(os.path.abspath( __file__
 progname     = 'InterFits viewer'
 
 try:
-    import lib.qt_compat as qt_compat
+    import interfits.lib.qt_compat as qt_compat
     QtGui = qt_compat.import_module("QtGui")
     QtCore = qt_compat.QtCore
     
@@ -76,7 +76,8 @@ except:
     exit()
 
 try:
-    from ledafits import *
+    from interfits.ledafits import *
+    from interfits import InterFits as InterFitsOriginal, h1
     InterFits = LedaFits
 except:
     print "Warning: cannot load ledafits. Defaulting to Interfits..."
@@ -208,8 +209,15 @@ class InterFitsGui(QtGui.QWidget):
                 self.plot_single_baseline(1,1)
                 self.updateSpinners()
             except:
-                print "Error: cannot open %s"%self.filename
-                raise
+                try:
+                    self.uv = InterFitsOriginal(self.filename)
+                    #self.openSdFits(self.filename)
+                    self.onFileOpen()
+                    self.plot_single_baseline(1,1)
+                    self.updateSpinners()
+                except:
+                    print "Error: cannot open %s"%self.filename
+                    raise
         
         self.setGeometry(300, 300, width, height)   
         self.show()
