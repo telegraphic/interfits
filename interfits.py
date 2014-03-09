@@ -72,12 +72,16 @@ class PrintLog(object):
         if self.vlevel >= 4:
             print text
 
+    def pa(self, text):
+        """ Always print """
+        print text
+
     def debug(self, text):
-        """  """
+        """ Print debug information to screen """
         if self.vlevel >= 5:
             print text
 
-    def err(text):
+    def err(self, text):
         """ Print out an error message / warning string """
         print(Fore.RED + text + Fore.WHITE)
 
@@ -179,6 +183,8 @@ class InterFits(object):
                 file_ext = os.path.splitext(filename)[1][1:]
                 self._readFile(file_ext)
 
+        self._initialize_site()
+
     def _readFile(self, filetype):
         """ Lookup dictionary (case statement) for file types """
         return {
@@ -209,14 +215,15 @@ class InterFits(object):
         self.site.lat  = lat_rad
         self.site.elev = elev
 
-        self.site_info()
+        self.site_info(follow_verbosity=True)
 
-    def site_info(self):
+    def site_info(self, follow_verbosity=False):
         """ Print information about the site """
-        self.pp.pp("Telescope: %s" % self.telescope)
-        self.pp.pp("Latitude:  %s" % self.site.lat)
-        self.pp.pp("Longitude: %s" % self.site.long)
-        self.pp.pp("Elevation: %s" % self.site.elev)
+        if not follow_verbosity:
+            self.pp.pa("Telescope: %s" % self.telescope)
+            self.pp.pa("Latitude:  %s" % self.site.lat)
+            self.pp.pa("Longitude: %s" % self.site.long)
+            self.pp.pa("Elevation: %s" % self.site.elev)
 
     def readError(self):
         """ Raise an error if file cannot be read """
@@ -299,7 +306,6 @@ class InterFits(object):
 
         if self.pp.vlevel >= 3:
             self.fits.info()
-            self.site_info()
 
         # Load array geometry data
         self.pp.h2("Loading array geometry")
@@ -483,7 +489,7 @@ class InterFits(object):
         if from_file:
             if self.pp.vlevel >= 3:
                 self.fits.info()
-                self.site_info()
+            #self.site_info(follow_verbosity=True)
 
         # Load array geometry data
         self.pp.h2("Loading array geometry")
@@ -865,11 +871,18 @@ class InterFits(object):
         if dump_uv_data:
             dump_json(self.d_uv_data, os.path.join(dirname_out, 'd_uv_data.json'))
 
-    def exportHdf5(self, filename_out):
+    def exportHdf5(self, filename_out, compression=None, scaleoffset=None):
         """ Export data as HDF5 file
 
         filename_out: str
             name of output files into.
+        compression: str
+            Apply compression to data? Defaults to none, can be one of:
+            None, gzip (slow), lzf, szip (if supported), scaleoffset
+        scaleoffset: int
+            Scale offset, used only if using scale offset filter-based compression.
+            This is a lossy compression scheme, high integers = higher loss
+
         """
         self.pp.h1("Exporting to %s" % filename_out)
         self.hdf = h5py.File(filename_out, "w")
@@ -896,9 +909,28 @@ class InterFits(object):
             hgroup = self.hdf.create_group(ifd_name)
             for key in ifd:
                 if type(ifd[key]) in (str, int, float, unicode):
-                    hgroup.create_dataset(key, data=[ifd[key]])
+                    # Key must be unicode!
+                    key = str(key)
+
+                    if type(ifd[key]) is unicode:
+                        ifd[key] = str(ifd[key])
+                    if compression is not None:
+                        try:
+                            hgroup.create_dataset(key, data=[ifd[key]],
+                                                  compression=compression, scaleoffset=scaleoffset)
+                        except TypeError:
+                            hgroup.create_dataset(key, data=[ifd[key]])
+                    else:
+                        hgroup.create_dataset(key, data=[ifd[key]])
                 else:
-                    hgroup.create_dataset(key, data=ifd[key])
+                    if compression is not None:
+                        try:
+                            hgroup.create_dataset(key, data=[ifd[key]],
+                                                  compression=compression, scaleoffset=scaleoffset)
+                        except TypeError:
+                            hgroup.create_dataset(key, data=ifd[key])
+                    else:
+                        hgroup.create_dataset(key, data=ifd[key])
         self.hdf.close()
 
     def exportFitsidi(self, filename_out, config_xml=None, verbose=False):
@@ -908,9 +940,7 @@ class InterFits(object):
         config_xml (str): path to config file
         
         """
-
         self.pp.h1("Exporting to FITS-IDI")
-
         self.pp.h2('Generating FITS-IDI XML schema')
         if config_xml is None:
             dirname, this_file = os.path.split(os.path.abspath(__file__))
@@ -997,7 +1027,7 @@ class InterFits(object):
         tbl_frequency.data['CH_WIDTH'][0] = self.d_frequency['CH_WIDTH']
         tbl_frequency.data['TOTAL_BANDWIDTH'][0] = self.d_frequency['TOTAL_BANDWIDTH']
 
-        h3("SOURCE")
+        self.pp.h3("SOURCE")
         if type(self.d_source['SOURCE']) == str:
             for k in ['SOURCE', 'RAEPO', 'DECEPO']:
                 try:

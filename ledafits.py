@@ -30,7 +30,6 @@ class HeaderDataUnit(object):
         self.data = data
 
 
-# noinspection PyUnresolvedReferences,PyUnresolvedReferences,PyUnresolvedReferences,PyUnresolvedReferences,PyUnresolvedReferences,PyUnresolvedReferences,PyUnresolvedReferences,PyUnresolvedReferences
 class LedaFits(InterFits):
     """ LEDA extension of InterFits class 
     
@@ -384,15 +383,7 @@ class LedaFits(InterFits):
             self.site.lat  = lat_rad
             self.site.elev = elev
 
-        self.site_info()
-
-    def site_info(self):
-        """ Print information about the site """
-        self.pp.pp("Telescope: %s" % self.telescope)
-        self.pp.pp("Latitude:  %s" % self.site.lat)
-        self.pp.pp("Longitude: %s" % self.site.long)
-        self.pp.pp("Elevation: %s" % self.site.elev)
-
+        self.site_info(follow_verbosity=True)
 
     def _vis_matrix_to_flux(self, vis, remap=False):
         """Convert a visibility matrix to FITS-IDI flux standard
@@ -682,7 +673,6 @@ class LedaFits(InterFits):
         self.pp.pp("LST: %s (%s)" % (lst, lst_deg))
         return lst_deg
 
-    # noinspection PyUnusedLocal,PyUnusedLocal
     def generateUVW(self, src='ZEN', update_src=True, conjugate=False, use_stored=False):
         """ Generate UVW coordinates based on timestamps and array geometry
 
