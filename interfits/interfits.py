@@ -10,17 +10,23 @@ Currently reads UV-FITS and FITS-IDI.
 
 
 import re
+import os
+import sys
 from datetime import datetime
 import h5py
 import ephem
 from colorama import Fore
+import pyfits as pf
+import numpy as np
+from lxml import etree
 
 from lib.pyFitsidi import *
 from lib.json_numpy import *
 from lib import coords
 
+
 __version__ = '0.0'
-__all__ = ['LinePrint', 'h1', 'h2', 'h3', 'InterFits', '__version__', '__all__']
+__all__ = ['LinePrint', 'PrintLog', 'InterFits', '__version__', '__all__']
 
 
 class LinePrint():
@@ -113,6 +119,7 @@ class InterFits(object):
         self.source = ""
         self.date_obs = ""
         self.obs_code = ""
+        self.t_int = 0.0
 
         # Set up dictionaries to store data
         self.h_antenna = {}
@@ -953,23 +960,23 @@ class InterFits(object):
 
         self.pp.h2('Creating Primary HDU')
         hdu_primary = make_primary(config=config_xml)
-        self.pp.debug(hdu_primary.header.ascardlist())
+        self.pp.debug(hdu_primary.header.ascard)
 
         self.pp.h2('Creating ARRAY_GEOMETRY')
         tbl_array_geometry = make_array_geometry(config=config_xml, num_rows=self.n_ant)
-        self.pp.debug(tbl_array_geometry.header.ascardlist())
+        self.pp.debug(tbl_array_geometry.header.ascard)
 
         self.pp.h2('Creating ANTENNA')
         tbl_antenna = make_antenna(config=config_xml, num_rows=self.n_ant)
-        self.pp.debug(tbl_antenna.header.ascardlist())
+        self.pp.debug(tbl_antenna.header.ascard)
 
         self.pp.h2('Creating FREQUENCY')
         tbl_frequency = make_frequency(config=config_xml, num_rows=1)
-        self.pp.debug(tbl_frequency.header.ascardlist())
+        self.pp.debug(tbl_frequency.header.ascard)
 
         self.pp.h2('Creating SOURCE')
         tbl_source = make_source(config=config_xml, num_rows=1)
-        self.pp.debug(tbl_source.header.ascardlist())
+        self.pp.debug(tbl_source.header.ascard)
 
         self.pp.h2('Creating UV_DATA')
         num_rows = self.d_uv_data['FLUX'].shape[0]
@@ -992,7 +999,7 @@ class InterFits(object):
                                    inttim_data=uvd['INTTIM'],
                                    weights_data=None, flux_data=uvd['FLUX'], weights_col=False)
 
-        self.pp.debug(tbl_uv_data.header.ascardlist())
+        self.pp.debug(tbl_uv_data.header.ascard)
 
         if self.write_flags:
             n_rows_flag = 0

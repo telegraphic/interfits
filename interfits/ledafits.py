@@ -121,7 +121,7 @@ class LedaFits(InterFits):
             LinePrint("%i of %i" % (ii, vis.shape[0]))
             vis[ii][iup] = lfc[ii]
             vis[ii][idiag] = lfa[ii]
-        self.pp.debug("\n %s" % vis.shape)
+        self.pp.debug("\n %s" % vis.shape[0])
 
         return vis
 
@@ -171,7 +171,7 @@ class LedaFits(InterFits):
 
         # Load visibility data
         self.pp.h2("Loading visibility data")
-        vis = self._readLfile()
+        vis = self._readLfile(n_ant=n_ant, n_pol=2, n_chans=n_chans)
 
         self.pp.h2("Generating baseline IDs")
         # Create baseline IDs using MIRIAD >255 antenna format (which sucks)
@@ -283,6 +283,8 @@ class LedaFits(InterFits):
              tbl_frequency,
              tbl_antenna,
              tbl_source])
+
+        self.fits = hdulist
 
         self.stokes_vals = [-5, -6, -7, -8]
         self.readFitsidi(from_file=False, load_uv_data=False)
