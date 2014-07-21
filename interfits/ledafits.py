@@ -324,6 +324,7 @@ class LedaFits(InterFits):
         self.h_common["CHAN_BW"] = d.chan_bw_mhz * 1e6
         self.h_common["REF_PIXL"] = d.n_chans / 2 + 1
         self.h_common["RDATE"] = dd_obs  # Ignore time component
+        self.h_common["STK_1"] = -5
 
         self.d_frequency["CH_WIDTH"] = d.chan_bw_mhz * 1e6
         self.d_frequency["TOTAL_BANDWIDTH"] = d.bandwidth_mhz * 1e6
@@ -336,7 +337,7 @@ class LedaFits(InterFits):
         self.d_uv_data["INTTIM"] = np.ones_like(self.d_uv_data["INTTIM"]) * d.t_int
 
         # Recreate list of baselines
-        bl_ids, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=False)
+        bl_ids, ant_arr = coords.generateBaselineIds(self.n_ant, autocorrs=True)
         n_iters = int(len(self.d_uv_data["BASELINE"]) / len(bl_ids))
 
         self.pp.h2("Generating timestamps")
@@ -354,7 +355,7 @@ class LedaFits(InterFits):
 
         # Load array geometry from file, based on TELESCOP name
         self.loadAntArr()
-        self.phase_to_src('ZEN')
+        #self.phase_to_src('ZEN')
 
     def _initialize_site(self):
         """ Setup site (ephem observer)

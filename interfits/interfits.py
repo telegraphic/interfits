@@ -91,7 +91,7 @@ class PrintLog(object):
 
     def err(self, text):
         """ Print out an error message / warning string """
-        print(Fore.RED + text + Fore.WHITE)
+        print(Fore.RED + str(text) + Fore.WHITE)
 
     def warn(self, text):
         """ Print out a warning message """
@@ -730,6 +730,12 @@ class InterFits(object):
                         else:
                             ifd[key] = h5d[key][:]
 
+            # TODO: Unhardcode this
+            self.stokes_axis = ['XX', 'YY', 'XY', 'YX']
+            self.stokes_vals = [-5, -6, -7, -8]
+
+            self.n_ant = len(self.d_array_geometry['NOSTA'])
+
         except ValueError:
             self.hdf.close()
             self.pp.warn(key)
@@ -737,8 +743,12 @@ class InterFits(object):
             raise
 
         self.date_obs = self.h_uv_data["DATE-OBS"]
-        self.telescope = self.h_uv_data["TELESCOP"]
-        self.instrument = self.h_array_geometry["ARRNAM"]
+        try:
+            self.telescope = self.h_uv_data["TELESCOP"]
+            self.instrument = self.h_array_geometry["ARRNAM"]
+        except KeyError:
+            self.telescope = 'UNKNOWN'
+            self.instrument = 'UNKNOWN'
         self.source = self.d_source["SOURCE"][0]
 
     def setXml(self, table, keyword, value):
@@ -896,6 +906,9 @@ class InterFits(object):
         self.pp.h1("Exporting to %s" % filename_out)
         self.hdf = h5py.File(filename_out, "w")
 
+        self.h_uv_data["TELESCOP"]      = self.telescope
+        self.h_array_geometry["ARRNAM"] = self.instrument
+
         ifds = [self.h_antenna, self.h_source, self.h_array_geometry, self.h_frequency, self.h_uv_data,
                 self.d_antenna, self.d_source, self.d_array_geometry, self.d_frequency, self.d_uv_data,
                 self.h_common, self.h_params]
@@ -917,6 +930,11 @@ class InterFits(object):
             self.pp.h2("Creating %s" % ifd_name)
             hgroup = self.hdf.create_group(ifd_name)
             for key in ifd:
+
+                if type(ifd[key]) is list:
+                    if type(ifd[key][0]) is unicode:
+                        ifd[key] = np.array(ifd[key], dtype='str')
+
                 if type(ifd[key]) in (str, int, float, unicode):
                     # Key must be unicode!
                     key = str(key)

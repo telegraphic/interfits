@@ -10,8 +10,9 @@ Module for reading in data in the Dada format.
 import numpy as np
 import glob
 import os
+from numba import jit, float32, complex64
 
-#from interfits.lib.timeit import timeit
+from interfits.lib.timeit import timeit
 
 __version__ = '0.0'
 __all__ = ['DadaReader', 'lookup_warn', '__version__', '__all__']
@@ -29,6 +30,23 @@ def lookup_warn(table, key, default=None):
             print "#Warning: No key '%s'" % key
             return None
 
+@jit(complex64(float32), target='cpu')
+def data2cplx(data):
+    """ Convert data into complex form
+
+    Helper function to allow for JIT compilation
+    """
+    #shape: (200, 2, 600, 2176)
+    data = data[:, 0, :, :] + np.complex(-1j) * data[:, 1, :, :]
+    return data
+
+@jit(complex64(complex64), target='cpu')
+def reorderTranspose(mat, n_int, n_chans, n_station, n_pol):
+    """ Do reorder and transpose operation """
+    # Reorder so that pol products change fastest
+    mat = mat.reshape(n_int, n_chans, n_station, n_pol, n_station, n_pol)
+    mat = mat.transpose([0, 2, 4, 1, 3, 5])
+    return mat
 
 class DadaReader(object):
     """ Dada file reader for raw LEDA correlator data.
@@ -231,11 +249,14 @@ class DadaReader(object):
         # Scatter values into new full matrix
         fullmatrix = np.zeros((n_int, self.n_chans, self.n_input, self.n_input),
                               dtype=np.complex64)
-
+        import time
+        t1 = time.time()
         if not fill_conjugate:
             # Note cols then rows and conjugation (-1j) -- this is required
-            data = data[..., 0, :, :] + np.complex64(-1j) * data[..., 1, :, :]
+            #data = data2cplx(data)
+            data = data[:, 0, :, :] + np.complex(-1j) * data[:, 1, :, :]
             fullmatrix[..., self.matcols, self.matrows] = data
+
         else:
             # Fill out the other (conjugate) triangle
             # Note rows then cols and no conjugation -- in contrast to above
@@ -244,13 +265,20 @@ class DadaReader(object):
             tri_inds = np.arange(self.n_input * (self.n_input + 1) / 2, dtype=np.uint32)
             rows, cols = self.triangular_coords(tri_inds)
             fullmatrix[..., cols, rows] = np.conj(fullmatrix[..., rows, cols])
+        t2 = time.time()
 
         # Reorder so that pol products change fastest
+        #fullmatrix = reorderTranspose(fullmatrix,
+        #                              self.n_int, self.n_chans, self.n_station, self.n_pol)
         fullmatrix = fullmatrix.reshape(n_int, self.n_chans,
                                         self.n_station, self.n_pol,
                                         self.n_station, self.n_pol)
         fullmatrix = fullmatrix.transpose([0, 2, 4, 1, 3, 5])
+        t3 = time.time()
+
         self.data = fullmatrix
+        print t2-t1
+        print t3-t2
 
 
     def triangular_coords(self, matrix_idx):
