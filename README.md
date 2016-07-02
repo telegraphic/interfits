@@ -1,3 +1,5 @@
+*July 1, 2016: This repository is no longer maintained. Certain aspects have been ported to `fits2hdf` -- https://github.com/telegraphic/fits2hdf*
+
 InterFits
 =========
 
